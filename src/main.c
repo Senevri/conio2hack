@@ -6,6 +6,11 @@
 
 enum {INPUT, COMMAND, QUIT};
 int mode = INPUT;
+struct text_info info;
+struct list{
+	int * line;
+	struct list * next;
+};
 
 void movecursym(int x, int y){
 		gotoxy(x, y);
@@ -16,18 +21,19 @@ void movecursym(int x, int y){
 		gotoxy(x, y); // putting a character increases x
 }
 
-
+void edit_mode();
 void eval_command(int cmd, char* params){
 	//enums must match order in char array
-	enum {EXIT, KOMENTO};
+	enum {EXIT, EDITOR};
 	switch (cmd) {
 		case EXIT : //namespace overlap
 			printf("=%s", params);
 			mode = QUIT;
 			//printf("suor komento foo");
 			break;
-		case KOMENTO:
-			printf("suor komento komento ");
+		case EDITOR:
+			//printf("suor komento komento ");
+			edit_mode();
 			break;
 		default: 
 			printf("ERRORERROR");
@@ -40,7 +46,7 @@ void eval_command(int cmd, char* params){
 void parse_cmd(char* cmd) {
 	char *commands[] = {
 		"quit", 
-		"komento", 
+		"editor", 
 		NULL
 	};
 	int i = 0;
@@ -78,6 +84,7 @@ void debug_show_keycode(int val){
 }
 
 void command_mode(struct text_info info) {
+	textcolor(YELLOW);
 	char cmd[80];
 	int pos=0;
 	int val;
@@ -115,7 +122,7 @@ int main(int argc, char *argv[])
 {
 	enum { MENUHEIGHT = 2, KEY_ESC = 27 };
 	int val = 0;
-	struct text_info info;
+	//struct text_info info;
 	struct char_info * screen_buffer;
 	int cursor_pos_x, cursor_pos_y;
 
