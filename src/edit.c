@@ -13,8 +13,13 @@ struct list{
 void save_file(struct list *data){
 	enum {MAX = 256};
 	char filename[MAX];
-	fgets(filename, MAX-1, stdin);
+	FILE * file;
+	char mbstr[160];
+	int len;
+	//fgets(filename, MAX-1, stdin);
+	scanf("%256s", filename);
 
+	if (0==strcmp(filename, "")) return;
 	clrscr();
 	/* test  */
 	gotoxy(1,1);
@@ -24,11 +29,18 @@ void save_file(struct list *data){
 		printf("null error");
 		return;
 	}
+	file = fopen(filename, "w");
 	while (data->next != NULL) {
 		clreol();
-		wprintf(L"%s", data->line);	
+		//debug
+		wprintf(L"%s", data->line);
+		//write
+		len = wcstombs(mbstr, data->line, 160);
+		fwrite(mbstr, sizeof(char), len,file);
 		data = data->next;
 	}
+	fputc((wchar_t)0, file);
+	fclose(file);
 	//print last line
 	//printf("%s", data->line);		
 }
@@ -46,16 +58,51 @@ void store_and_next_node(struct list *l, const wchar_t * buf) {
 	l->next = init_node();
 } 
 
+char * str_to_bitstr(wchar_t * buf){
+	int i=0;
+	char * out = malloc(9*80*sizeof(char));
+
+	//char out[9*80];
+	while(buf[i]){
+		int bits[8] = { 128, 64, 32, 16, 8, 4, 2, 1 };
+		//we have a number...
+		//bits: 1, 2, 4, 8, 16, 32, 64, 128
+		int tmp = (int)buf[i];
+		for (int j=0; j!=8; j++) {
+			if (tmp-bits[j]>0) {
+				out[(j)+i*9] = '1';
+				tmp-=bits[j];
+			} else {
+				out[j+i*9] = '0';
+			}
+		}
+		out[8+i*9] = ' ';
+		i++;
+	}
+	out[i*9] = '\0';
+	return out;
+}
+
+void rewind_cmd_key(int i, wchar_t *buf, wchar_t *line){
+	if (i!=0){ 
+		buf[i-1] = '\0'; 
+	} else { //last char in line is 'reserved'. 
+		line[78] = '\0';
+	}
+}
+
 void edit_mode(){
 	clrscr();
 	_setcursortype(20);
 	//ctrl or modal?
 	enum { KEY_ESC = 27, KEY_ENTER = '\r', KEY_BACKSPACE = 8, 
-		CTRL_S = 19, CTRL_P = 16};
+		CTRL_S = 19, CTRL_P = 16, CTRL_B = 2,
+		KEY_UP = 72, KEY_DOWN = 80, KEY_LEFT = 75, KEY_RIGHT = 77};
 	int i=0;
 	wchar_t buf[80];
 	int val;
 	int tmpx, tmpy;
+	char * bits;
 
 	struct list *l = init_node();
 	gotoxy(1,1);
@@ -67,7 +114,7 @@ void edit_mode(){
 	//struct list * tmp = head;
 	while((val = getch())!=KEY_ESC){
 		buf[i]=(wchar_t)val;		
-		printf("%c", buf[i]);
+		//printf("%c", buf[i]);
 		i++;
 		buf[i]='\0';
 		//if (i<79 && l==NULL) l=malloc(sizeof(struct list));
@@ -86,27 +133,29 @@ void edit_mode(){
 					buf[i+1]='\0';
 				}
 				if (i!=0){
-				// append_unsaved_buffer(l, buf)
 					i=0;
 					store_and_next_node(l, buf);
 					l=l->next;
 				}
-
 				//fix dbg line
 				gotoxy(10,1); clreol();
 				gotoxy(1, tmpy);
 				break;
 			case KEY_BACKSPACE:
-				//this isn't nice if arrow keys work...
+				//correct way: delete entry by shifting rest of line backwards by 1.
+				rewind_cmd_key(i-1, buf, l->line);
+				//wprintf(L"%c", (wchar_t)val);
+				i-=2;
+				wcscpy(&buf[i], &buf[i+2]);
+				gotoxy(1, wherey());
 				clreol();
+				wprintf(L"%s", buf);
+				
+				//TBD
 				break;
 			case CTRL_S:
 				//rewind save key
-				if (i!=0){ 
-					buf[i-1] = '\0'; 
-				} else {
-					l->line[78] = '\0';
-				}
+				rewind_cmd_key(i, buf, l->line);
 				//store current pos
 				tmpx = wherex();
 				tmpy = wherey();
@@ -114,17 +163,44 @@ void edit_mode(){
 				printf("Save file:");
 				clreol();
 				if (i!=0){
-					// append_unsaved_buffer(l, buf)
 					i=0;
 					store_and_next_node(l, buf);
 					l=l->next;
 				}
 				save_file(head);
 				gotoxy(1,1);
-				printf("Editor\n");
+				textcolor(YELLOW);
+				printf("Editor");
+				clreol();
 				textcolor(LIGHTGRAY);	
 				gotoxy(tmpx, tmpy);
 				//val = KEY_ENTER;
+				val=0;
+				break;
+			case CTRL_B: //print buffer in binary
+				rewind_cmd_key(i, buf, l->line);
+				//goto next line, print bitstring
+				gotoxy(1, tmpy+1);
+				bits = str_to_bitstr(buf);
+				printf("%s", bits);
+				free(bits);
+				gotoxy(1, wherey()+1);
+				if (i!=0){
+					i=0;
+					store_and_next_node(l, buf);
+					l=l->next;
+				}		
+				break;
+			case KEY_UP:
+			case KEY_DOWN:
+			case KEY_LEFT:
+			case KEY_RIGHT:
+				rewind_cmd_key(i-1, buf, l->line);
+				gotoxy(1, wherey());
+				clreol();
+				wprintf(L"%s", buf);
+				i--;
+				val=0;
 				break;
 			case CTRL_P:
 				/*tmpx = wherex(); tmpy = wherey();
@@ -141,6 +217,7 @@ void edit_mode(){
 				gotoxy(tmpx, tmpy);*/
 				break;				
 			default:
+				if (0 != val) wprintf(L"%c", (wchar_t)val);
 				//dbg code
 				tmpx = wherex();
 				tmpy = wherey();

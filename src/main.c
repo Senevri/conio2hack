@@ -22,9 +22,10 @@ void movecursym(int x, int y){
 }
 
 void edit_mode();
+void roguelike();
 void eval_command(int cmd, char* params){
 	//enums must match order in char array
-	enum {EXIT, EDITOR};
+	enum {EXIT, EDITOR, HACK};
 	switch (cmd) {
 		case EXIT : //namespace overlap
 			printf("=%s", params);
@@ -34,6 +35,9 @@ void eval_command(int cmd, char* params){
 		case EDITOR:
 			//printf("suor komento komento ");
 			edit_mode();
+			break;
+		case HACK: 
+			roguelike();
 			break;
 		default: 
 			printf("ERRORERROR");
@@ -46,7 +50,8 @@ void eval_command(int cmd, char* params){
 void parse_cmd(char* cmd) {
 	char *commands[] = {
 		"quit", 
-		"editor", 
+		"editor",
+		"hack",	
 		NULL
 	};
 	int i = 0;
@@ -104,10 +109,13 @@ void command_mode(struct text_info info) {
 				pos = 0;
 				break;
 			case 8: //backspace
-				pos = pos - 2; //backspace and the del'd chara 
-				//cmd[pos+1] = '\0';
-				clreol();
-				backspace = 1;
+				if (pos>0) {
+					pos = pos - 2; //backspace and the del'd chara 
+
+					//cmd[pos+1] = '\0';
+					clreol();
+					backspace = 1;
+				}
 			default: 
 				cmd[pos+backspace] = (char)val;
 				backspace=0;
