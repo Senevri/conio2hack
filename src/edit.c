@@ -58,18 +58,44 @@ void store_and_next_node(struct list *l, const wchar_t * buf) {
 	l->next = init_node();
 } 
 
-char * str_to_bitstr(wchar_t * buf){
+wchar_t * bitstr_to_str(wchar_t *buf){
+	int i=0, j=0;
+	int bitpos=0;
+	int bits[8] = { 128, 64, 32, 16, 8, 4, 2, 1 };
+	wchar_t * out = calloc(80, sizeof(wchar_t));
+	while(buf[i]){
+		switch (buf[i]){
+			case '1':
+			case '0':
+				out[j] += atoi((const char *)&buf[i])*bits[bitpos];
+				bitpos++;
+				if (8==bitpos) {
+					//out[j]++;
+				//	wprintf(L"%d|", out[j]);
+					bitpos = 0;
+					j++;
+				}
+				break;
+			default:
+				break;
+		}
+		i++;
+	}
+	out[j+1]='\0';
+	return out;
+}
+wchar_t * str_to_bitstr(wchar_t * buf){
 	int i=0;
-	char * out = malloc(9*80*sizeof(char));
-
+	wchar_t * out = malloc(9*80*sizeof(wchar_t));
+	int bits[8] = { 128, 64, 32, 16, 8, 4, 2, 1 };
+	
 	//char out[9*80];
 	while(buf[i]){
-		int bits[8] = { 128, 64, 32, 16, 8, 4, 2, 1 };
 		//we have a number...
 		//bits: 1, 2, 4, 8, 16, 32, 64, 128
 		int tmp = (int)buf[i];
 		for (int j=0; j!=8; j++) {
-			if (tmp-bits[j]>0) {
+			if (tmp-bits[j]>=0) {
 				out[(j)+i*9] = '1';
 				tmp-=bits[j];
 			} else {
@@ -96,13 +122,13 @@ void edit_mode(){
 	_setcursortype(20);
 	//ctrl or modal?
 	enum { KEY_ESC = 27, KEY_ENTER = '\r', KEY_BACKSPACE = 8, 
-		CTRL_S = 19, CTRL_P = 16, CTRL_B = 2,
+		CTRL_S = 19, CTRL_P = 16, CTRL_B = 2, CTRL_D = 4,
 		KEY_UP = 72, KEY_DOWN = 80, KEY_LEFT = 75, KEY_RIGHT = 77};
 	int i=0;
 	wchar_t buf[80];
 	int val;
 	int tmpx, tmpy;
-	char * bits;
+	wchar_t * bits;
 
 	struct list *l = init_node();
 	gotoxy(1,1);
@@ -182,7 +208,21 @@ void edit_mode(){
 				//goto next line, print bitstring
 				gotoxy(1, tmpy+1);
 				bits = str_to_bitstr(buf);
-				printf("%s", bits);
+				wprintf(L"%s", bits);
+				free(bits);
+				gotoxy(1, wherey()+1);
+				if (i!=0){
+					i=0;
+					store_and_next_node(l, buf);
+					l=l->next;
+				}		
+				break;
+			case CTRL_D: //print characters of bitstream
+				rewind_cmd_key(i, buf, l->line);
+				//goto next line, print bitstring
+				gotoxy(1, tmpy+1);
+				bits = bitstr_to_str(buf);
+				wprintf(L"%s", bits);
 				free(bits);
 				gotoxy(1, wherey()+1);
 				if (i!=0){
