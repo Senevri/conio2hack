@@ -10,6 +10,9 @@ struct list{
 	struct list * next;
 };
 
+struct list * init_node();
+void store_and_next_node(struct list *l, const wchar_t * buf);
+//end header part
 void save_file(struct list *data){
 	enum {MAX = 256};
 	char filename[MAX];
@@ -44,6 +47,40 @@ void save_file(struct list *data){
 	//print last line
 	//printf("%s", data->line);		
 }
+void load_file(struct list *data){
+	//clear all data
+	//
+	enum {MAX = 256};
+	char filename[MAX];
+	FILE * file;
+	//char mbstr[160];
+	//int len;
+	wchar_t buf[80];
+	//fgets(filename, MAX-1, stdin);
+	scanf("%256s", filename);
+
+	if (0==strcmp(filename, "")) return;
+	clrscr();
+	/* test  */
+	gotoxy(1,1);
+	clreol();
+	printf("%s\n", filename);
+	while (data->next != NULL) {
+		struct list * tmp = data;
+		free(data->line);
+		data = data->next;
+		free(tmp);
+	}
+	data = init_node();
+	gotoxy(1,2);
+	file = fopen(filename, "r");
+	while (fgets((char *)buf, 80, file) != NULL) {
+		store_and_next_node(data, buf);
+		fprintf(stdout, "%s", buf);
+	}
+	
+}
+
 struct list * init_node() {
 	struct list * l;
 	l = malloc(sizeof(struct list));
@@ -123,6 +160,7 @@ void edit_mode(){
 	//ctrl or modal?
 	enum { KEY_ESC = 27, KEY_ENTER = '\r', KEY_BACKSPACE = 8, 
 		CTRL_S = 19, CTRL_P = 16, CTRL_B = 2, CTRL_D = 4,
+		CTRL_O = 15, 
 		KEY_UP = 72, KEY_DOWN = 80, KEY_LEFT = 75, KEY_RIGHT = 77};
 	int i=0;
 	wchar_t buf[80];
@@ -194,6 +232,23 @@ void edit_mode(){
 					l=l->next;
 				}
 				save_file(head);
+				gotoxy(1,1);
+				textcolor(YELLOW);
+				printf("Editor");
+				clreol();
+				textcolor(LIGHTGRAY);	
+				gotoxy(tmpx, tmpy);
+				//val = KEY_ENTER;
+				val=0;
+				break;
+			case CTRL_O:
+				rewind_cmd_key(i, buf, l->line);
+				tmpx = wherex();
+				tmpy = wherey();
+				gotoxy(1, info.screenheight);
+				printf("Load file:");
+				clreol();
+				load_file(head);
 				gotoxy(1,1);
 				textcolor(YELLOW);
 				printf("Editor");
