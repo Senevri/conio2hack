@@ -1,9 +1,17 @@
 CONIO2 	:= ext/conio2
 INCLUDE := -I$(CONIO2)
 SRCS 	:= src/main.c src/edit.c src/hack.c
-GCC		:= g:\mingw\bin\gcc.exe
+GCC	:= c:\mingw\bin\gcc.exe
+MKDIR	:= @mkdir
+OUT_DIR := bin
 
-.PHONY: all
+.PHONY: directories all clean
 
-all:
-	$(GCC) -std=c99 $(SRCS) $(CONIO2)/conio.c $(INCLUDE) -o bin/test.exe -Wall
+all: directories 
+	$(GCC) -std=c99 $(SRCS) $(CONIO2)/conio.c $(INCLUDE) -o $(OUT_DIR)/test.exe -Wall
+
+directories:
+	-$(MKDIR) $(OUT_DIR)
+
+clean: 
+	-@rm -rf bin *~
