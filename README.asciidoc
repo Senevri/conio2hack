@@ -1,4 +1,8 @@
+Conio2Hack
+==========
+
 Esa Karjalainen <esa.karjalainen@gmail.com>
+
 Introduction
 ------------
 some basic console stuff, probably thinking of roguelike-features.
