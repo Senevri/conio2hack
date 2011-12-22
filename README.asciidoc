@@ -38,10 +38,3 @@ hack
 ++++
 * Ctrl-Q quits
 
-
-hack
-++++
-
-quit
-++++
-Quits, duh.
