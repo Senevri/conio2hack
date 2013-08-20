@@ -50,6 +50,18 @@ void full_refresh(char *screenmap, struct symbol symbols[256]){
 	gotoxy(0,0);
 }
 
+struct creature * update_creature_position(struct creature * cr, char* name, int x, int y) {
+	struct creature * head = cr;
+	while (cr != NULL) {
+		if (strcmp(cr->name, name) == 0) {
+			cr->x = x; cr->y = y;
+
+		}
+		cr = cr->next;
+	}
+	return head;
+}
+
 struct creature* create_creature(const char * name, const char symbol, int color, int x, int y){
 	struct creature * c = malloc(sizeof(struct creature));
 	strcpy(c->name, name);
@@ -71,6 +83,46 @@ void draw_creatures(struct creature* critters){
 
 }
 
+void erase_creatures(struct creature * critters, char * screenmap, struct symbol symbols[256]) {
+	struct creature * cr = critters;
+	while(NULL!=cr){
+		unsigned char out = screenmap[(cr->y-1)*(info.screenwidth+1)+cr->x-1];
+		textcolor(symbols[out].color);
+		putchxy(cr->x, cr->y, symbols[out].character);
+		cr = cr->next;
+	}
+
+}
+
+struct creature * handle_input(int val, struct creature * player) {
+	enum { KEY_UP = 72, KEY_DOWN = 80, KEY_LEFT = 75, KEY_RIGHT = 77};	
+	switch(val) {
+		case KEY_UP:
+			if (player->y > 2) {
+				player->y -= 1;
+			}
+			break;
+		case KEY_DOWN:
+			if (player->y < info.screenheight -2) {
+				player->y += 1;
+			}
+			break;
+		case KEY_LEFT:
+			if (player->x>17) {
+				player->x -= 1;
+			}
+			break;
+		case KEY_RIGHT:
+			if (player->x<info.screenwidth -1) {
+				player->x += 1;
+			}
+			break;
+		default: 
+			break;
+	}
+	return player;
+}
+
 void roguelike() {
 	enum { KEY_ESC = 27, KEY_ENTER = '\r', KEY_BACKSPACE = 8, 
 		CTRL_S = 19, CTRL_P = 16, CTRL_Q = 17, CTRL_B = 2,
@@ -82,6 +134,9 @@ void roguelike() {
 
 	struct creature * critters = create_creature("playa", '@', LIGHTGRAY, 16+((info.screenwidth-16)/2), info.screenheight/2);
 	struct creature * head = critters;
+
+	/* store player for convenience*/
+	struct creature * player = critters;
 
 	/* some C++03-fu. if id in symbol, make a list, really...
 	 * we'd end up with linear time lookup instead of const, not that 
@@ -150,9 +205,16 @@ void roguelike() {
 
 	textcolor(WHITE);
 	full_refresh(&screenmap[0][0], terrain);
+	draw_creatures(head);
+	gotoxy(0,0);
+	_setcursortype(_NOCURSOR);
 	while((val=getch())!=CTRL_Q) {
-		//full_refresh(&screenmap[0][0]);
-		draw_creatures(head);
+		erase_creatures(head, &screenmap[0][0], terrain);
+		player = handle_input(val, player);
+		head = update_creature_position(head, player->name, player->x, player->y);
+		draw_creatures(head);		
+		gotoxy(0,0);
 	}
+	_setcursortype(_NORMALCURSOR);
 	textcolor(YELLOW);
 }
