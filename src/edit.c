@@ -3,17 +3,12 @@
 #include <conio2.h>
 #include <string.h>
 
+#include "edit.h"
+
 struct text_info info;
 
-struct list{
-	wchar_t * line;
-	struct list * next;
-};
-
-struct list * init_node();
-void store_and_next_node(struct list *l, const wchar_t * buf);
 //end header part
-void save_file(struct list *data){
+int save_file(struct list *data){
 	enum {MAX = 256};
 	char filename[MAX];
 	FILE * file;
@@ -22,7 +17,7 @@ void save_file(struct list *data){
 	//fgets(filename, MAX-1, stdin);
 	scanf("%256s", filename);
 
-	if (0==strcmp(filename, "")) return;
+	if (0==strcmp(filename, "")) return -1;
 	clrscr();
 	/* test  */
 	gotoxy(1,1);
@@ -30,7 +25,7 @@ void save_file(struct list *data){
 	printf("%s\n", filename);
 	if (data==NULL || data->line==NULL) {
 		printf("null error");
-		return;
+		return -1;
 	}
 	file = fopen(filename, "w");
 	while (data->next != NULL) {
@@ -45,21 +40,26 @@ void save_file(struct list *data){
 	fputc((wchar_t)0, file);
 	fclose(file);
 	//print last line
-	//printf("%s", data->line);		
+	//printf("%s", data->line);
+	return 1;
 }
-void load_file(struct list *data){
+struct list* load_file(struct list *data){
 	//clear all data
 	//
 	enum {MAX = 256};
 	char filename[MAX];
+	//fgets(filename, MAX-1, stdin);
+	scanf("%256s", filename);
+
+	if (0==strcmp(filename, "")) return NULL;
+	return load_file_by_filename(data, filename);
+}
+
+struct list* load_file_by_filename(struct list* data, const char* filename) {
 	FILE * file;
 	//char mbstr[160];
 	//int len;
 	wchar_t buf[80];
-	//fgets(filename, MAX-1, stdin);
-	scanf("%256s", filename);
-
-	if (0==strcmp(filename, "")) return;
 	clrscr();
 	/* test  */
 	gotoxy(1,1);
@@ -78,7 +78,7 @@ void load_file(struct list *data){
 		store_and_next_node(data, buf);
 		fprintf(stdout, "%s", buf);
 	}
-	
+	return data;
 }
 
 struct list * init_node() {
@@ -171,13 +171,13 @@ void edit_mode(){
 	struct list *l = init_node();
 	gotoxy(1,1);
 	printf("Editor\n");
-	textcolor(LIGHTGRAY);	
+	textcolor(LIGHTGRAY);
 
 	//gotoxy(1,2);
 	struct list *head = l;
 	//struct list * tmp = head;
 	while((val = getch())!=KEY_ESC){
-		buf[i]=(wchar_t)val;		
+		buf[i]=(wchar_t)val;	
 		//printf("%c", buf[i]);
 		i++;
 		buf[i]='\0';

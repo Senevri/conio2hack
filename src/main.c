@@ -1,16 +1,20 @@
 //hey macarena!
 #include <stdio.h>
 #include <stdlib.h>
-#include <conio2.h>
 #include <string.h>
+#include <conio2.h>
+
+#include "edit.h"
 
 enum {INPUT, COMMAND, QUIT};
 int mode = INPUT;
 struct text_info info;
-struct list{
+
+/* defined in edit.h */
+/*struct list{
 	int * line;
 	struct list * next;
-};
+}; */ 
 
 void movecursym(int x, int y){
 		gotoxy(x, y);
@@ -25,7 +29,8 @@ void edit_mode();
 void roguelike();
 void eval_command(int cmd, char* params){
 	//enums must match order in char array
-	enum {EXIT, EDITOR, HACK};
+	enum {EXIT, EDITOR, HACK, HELP};
+	struct list *help;
 	switch (cmd) {
 		case EXIT : //namespace overlap
 			printf("=%s", params);
@@ -39,6 +44,12 @@ void eval_command(int cmd, char* params){
 		case HACK: 
 			roguelike();
 			break;
+		case HELP:
+			// load readme
+			help = init_node();
+			//edit_mode();
+			load_file_by_filename(help, "README.asciidoc");
+			break;
 		default: 
 			printf("ERRORERROR");
 	}
@@ -49,9 +60,10 @@ void eval_command(int cmd, char* params){
 //accept \0 - terminated strings, scan for command words
 void parse_cmd(char* cmd) {
 	char *commands[] = {
-		"quit", 
+		"quit",
 		"editor",
-		"hack",	
+		"hack",
+		"help",
 		NULL
 	};
 	int i = 0;

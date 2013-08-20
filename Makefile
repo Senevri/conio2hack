@@ -1,5 +1,5 @@
 CONIO2 	:= ext/conio2
-INCLUDE := -I$(CONIO2)
+INCLUDE := -I$(CONIO2) -Isrc
 SRCS 	:= src/main.c src/edit.c src/hack.c
 GCC	:= c:\mingw\bin\gcc.exe
 MKDIR	:= @mkdir
