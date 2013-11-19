@@ -2,6 +2,10 @@
 #include <stdlib.h>
 #include <conio2.h>
 #include <string.h>
+#include <stdbool.h>
+
+
+enum { KEY_UP = 72, KEY_DOWN = 80, KEY_LEFT = 75, KEY_RIGHT = 77};	
 
 struct text_info info; //filled in main
 
@@ -30,6 +34,15 @@ struct creature{
 	int x;
 	int y;
 	struct creature * next;
+};
+
+
+enum TERRAIN { GRASS, WATER, WALL};	
+
+struct symbol terrain[256] = {
+    {"grass", '.', GREEN},
+    {"water", '~', BLUE},
+    {"wall",  '#', DARKGRAY}
 };
 
 void full_refresh(char *screenmap, struct symbol symbols[256]){
@@ -94,8 +107,18 @@ void erase_creatures(struct creature * critters, char * screenmap, struct symbol
 
 }
 
-struct creature * handle_input(int val, struct creature * player) {
-	enum { KEY_UP = 72, KEY_DOWN = 80, KEY_LEFT = 75, KEY_RIGHT = 77};	
+
+bool movement_blocked(struct creature *player, char * screenmap) {
+    char id = screenmap[(player->y-1)*(info.screenwidth+1) + (player->x-1)];
+    if (id==WALL) {
+        return true;
+    }
+    return false;
+    
+}
+
+struct creature * handle_input(int val, struct creature * player, char * screenmap) {
+    struct creature tmp = *player;
 	switch(val) {
 		case KEY_UP:
 			if (player->y > 2) {
@@ -120,6 +143,9 @@ struct creature * handle_input(int val, struct creature * player) {
 		default: 
 			break;
 	}
+    if (movement_blocked(player, screenmap)) {
+        memcpy(player, &tmp, sizeof(struct creature));
+    }
 	return player;
 }
 
@@ -138,15 +164,6 @@ void roguelike() {
 	/* store player for convenience*/
 	struct creature * player = critters;
 
-	/* some C++03-fu. if id in symbol, make a list, really...
-	 * we'd end up with linear time lookup instead of const, not that 
-	 * it matters even on old old computers. */
-	enum TERRAIN { GRASS, WATER, WALL};	
-	struct symbol terrain[256] = {
-		{"grass", '.', GREEN},
-		{"water", '~', BLUE},
-		{"wall",  '#', DARKGRAY}
-	};
 	
 	//construct terrain
 //	for (int i = 0; i <2; i++){
@@ -194,13 +211,13 @@ void roguelike() {
 	// a wall.... 
 	//
 	
-	for (int x=20; x<26;x++){
+	for (int x=20; x<30;x++){
 		screenmap[5][x] = WALL;
-		screenmap[10][x] = WALL;
+		screenmap[15][x] = WALL;
 	} 
-	for (int y=5; y<10;y++){
+	for (int y=5; y<15;y++){
 		screenmap[y][20] = WALL;
-		screenmap[y][25] = WALL;
+		screenmap[y][30] = WALL;
 	} 
 
 	textcolor(WHITE);
@@ -208,9 +225,10 @@ void roguelike() {
 	draw_creatures(head);
 	gotoxy(0,0);
 	_setcursortype(_NOCURSOR);
+	_setcursortype(0);
 	while((val=getch())!=CTRL_Q) {
 		erase_creatures(head, &screenmap[0][0], terrain);
-		player = handle_input(val, player);
+		player = handle_input(val, player, (char *)screenmap);
 		head = update_creature_position(head, player->name, player->x, player->y);
 		draw_creatures(head);		
 		gotoxy(0,0);

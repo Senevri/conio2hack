@@ -114,6 +114,7 @@ void command_mode(struct text_info info) {
 				break;
 			case '\r': //ENTER - exec command;
 				cmd[pos] = '\0';
+                // TODO: check for aliases
 				parse_cmd(cmd);
 				gotoxy(1, info.screenheight);
 				printf("Command: ");
@@ -237,6 +238,12 @@ int main(int argc, char *argv[])
 		gotoxy(1, info.screenheight-1);
 		//printf("this should go to bottom of the screen");
 		gotoxy(1, 1);
+        if (argc ==2 && 0 == strcmp("hack", argv[1])) { // fixme check argument is hack.
+            parse_cmd("hack"); // run hack, on return enter command mode
+            argc = 1;
+            val = 0;
+            mode = COMMAND;
+        }
 	}
 	/* restore the original screen */
 	puttext( 1, 1, info.screenwidth, info.screenheight, screen_buffer );
