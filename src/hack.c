@@ -63,6 +63,15 @@ void full_refresh(char *screenmap, struct symbol symbols[256]){
 	gotoxy(0,0);
 }
 
+struct creature * get_last_creature(struct creature * critters) {
+	struct creature * cr = critters;
+	while (cr != NULL) {
+		critters = cr;
+		cr = cr->next;
+	}
+	return critters;
+}
+
 struct creature * update_creature_position(struct creature * cr, char* name, int x, int y) {
 	struct creature * head = cr;
 	while (cr != NULL) {
@@ -86,11 +95,15 @@ struct creature* create_creature(const char * name, const char symbol, int color
 	return c;
 }
 
+static inline void draw_creature(struct creature * creature) {
+	textcolor(creature->sym.color);
+	putchxy(creature->x, creature->y, creature->sym.character);
+}
+
 void draw_creatures(struct creature* critters){
 	struct creature * cr = critters;
-	while(NULL!=cr){
-		textcolor(cr->sym.color);
-		putchxy(cr->x, cr->y, cr->sym.character);
+	while(NULL != cr){
+		draw_creature(cr);
 		cr = cr->next;
 	}
 
@@ -160,6 +173,7 @@ void roguelike() {
 
 	struct creature * critters = create_creature("playa", '@', LIGHTGRAY, 16+((info.screenwidth-16)/2), info.screenheight/2);
 	struct creature * head = critters;
+	head->next = create_creature("monsu", 'M', RED, 16+20, 20);
 
 	/* store player for convenience*/
 	struct creature * player = critters;
@@ -178,7 +192,6 @@ void roguelike() {
 		terrain[i].color = 0;
 
 	}
-	
 
 
 	int val; // getch value 
@@ -230,9 +243,13 @@ void roguelike() {
 		erase_creatures(head, &screenmap[0][0], terrain);
 		player = handle_input(val, player, (char *)screenmap);
 		head = update_creature_position(head, player->name, player->x, player->y);
-		draw_creatures(head);		
-		gotoxy(0,0);
-	}
+		draw_creatures(head);
+		textcolor(WHITE);		
+		putchxy(2, 2, ':');
+		printf("Test");
+		_setcursortype(_NOCURSOR);
+		_setcursortype(0);
+    }
 	_setcursortype(_NORMALCURSOR);
 	textcolor(YELLOW);
 }
