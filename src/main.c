@@ -16,7 +16,7 @@ struct text_info info;
 	struct list * next;
 }; */ 
 
-void movecursym(int x, int y){
+void move_cursor_symbol(int x, int y){
 		gotoxy(x, y);
 		textcolor(YELLOW);
 		putchxy(x, y, '@');
@@ -168,10 +168,20 @@ int main(int argc, char *argv[])
 	/* clear the screen */
 	clrscr();
 	printf("hello, world!\n");
-	movecursym(info.screenwidth/2, info.screenheight/2);
+	move_cursor_symbol(info.screenwidth/2, info.screenheight/2);
 	int cursorx = wherex();
 	int cursory = wherey();
-	gotoxy(1, 1);
+	gotoxy(1, 2);
+	if (argc > 1){
+		for (int i=0; i<argc;i++) {
+			printf(argv[i]);
+			printf("\n");
+		}
+		parse_cmd(argv[argc-1]);
+		argc = 1;
+	}
+	gotoxy(1,1);
+
 	while(val != KEY_ESC && mode != QUIT){
 		textcolor(YELLOW);
 		val = getch();
@@ -182,26 +192,26 @@ int main(int argc, char *argv[])
 				case 'a': 
 					if(cursorx>1) { 
 						putchxy(cursorx, cursory, ' ');
-						movecursym(cursorx-1, cursory);
+						move_cursor_symbol(cursorx-1, cursory);
 					}
 					break;
 			
 				case 'd': //go right to the edge but no further
 					if (cursorx<info.screenwidth) { 
 						putchxy(cursorx, cursory, ' ');
-						movecursym(cursorx+1, cursory);
+						move_cursor_symbol(cursorx+1, cursory);
 					}
 					break;
 				case 's':
 					if (cursory<info.screenheight-MENUHEIGHT) {
 						putchxy(cursorx, cursory, ' ');
-						movecursym(cursorx, cursory+1);
+						move_cursor_symbol(cursorx, cursory+1);
 					}
 					break;
 				case 'w':
 					if(cursory>2) {
 						putchxy(cursorx, cursory, ' ');
-						movecursym(cursorx, cursory-1);
+						move_cursor_symbol(cursorx, cursory-1);
 					}
 					break;
 			}
@@ -237,13 +247,7 @@ int main(int argc, char *argv[])
 		cursory = wherey();
 		gotoxy(1, info.screenheight-1);
 		//printf("this should go to bottom of the screen");
-		gotoxy(1, 1);
-        if (argc ==2 && 0 == strcmp("hack", argv[1])) { // fixme check argument is hack.
-            parse_cmd("hack"); // run hack, on return enter command mode
-            argc = 1;
-            val = 0;
-            mode = COMMAND;
-        }
+		gotoxy(1, 1);        
 	}
 	/* restore the original screen */
 	puttext( 1, 1, info.screenwidth, info.screenheight, screen_buffer );

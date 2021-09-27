@@ -27,7 +27,7 @@ struct statistics {
 };
 
 //any creature in game
-struct creature{
+struct creature {
 	char name[255];
 	struct symbol sym;
 	struct statistics stats;
@@ -86,12 +86,14 @@ struct creature * update_creature_position(struct creature * cr, char* name, int
 
 struct creature* create_creature(const char * name, const char symbol, int color, int x, int y){
 	struct creature * c = malloc(sizeof(struct creature));
+	struct statistics defaults = {.atk = 10, .def = 10, .hp = 5, .max_hp = 5};
 	strcpy(c->name, name);
 	c->sym.character = symbol;
 	c->sym.color = color;
 	c->x = x;
 	c->y = y;
-	c->next = NULL;
+	c->stats = defaults;
+	c->next = NULL;	
 	return c;
 }
 
@@ -111,7 +113,7 @@ void draw_creatures(struct creature* critters){
 
 void erase_creatures(struct creature * critters, char * screenmap, struct symbol symbols[256]) {
 	struct creature * cr = critters;
-	while(NULL!=cr){
+	while(NULL!=cr) {
 		unsigned char out = screenmap[(cr->y-1)*(info.screenwidth+1)+cr->x-1];
 		textcolor(symbols[out].color);
 		putchxy(cr->x, cr->y, symbols[out].character);
@@ -121,11 +123,50 @@ void erase_creatures(struct creature * critters, char * screenmap, struct symbol
 }
 
 
+void print_creature_stats(struct creature * cr, char offset_y){
+	char * stat_str[] = {
+		"ATK", "DEF", "HP", "MAX", NULL
+	};
+
+	int * stats[] = {		
+		&cr->stats.atk, 
+		&cr->stats.def, 
+		&cr->stats.hp, 
+		&cr->stats.max_hp,
+		NULL
+	};
+	gotoxy(2,2+offset_y);
+	printf("%s", cr->name);
+
+	for (int i=0; stats[i]!=NULL;i++){
+		gotoxy(2,3+offset_y+i);
+		printf("%s:%d", stat_str[i], *stats[i]);
+	}
+}
+
+
+bool creature_in_position(struct creature * head, int x, int y) {
+	struct creature * cr = head->next;
+	while (NULL!=cr) {
+		//gotoxy(2,10);
+		//printf()
+		if (cr->x == x && cr->y == y) {
+			print_creature_stats(cr, 6);
+			return true;
+		}
+		cr = cr->next;
+	}
+	return false;
+}
+
 bool movement_blocked(struct creature *player, char * screenmap) {
     char id = screenmap[(player->y-1)*(info.screenwidth+1) + (player->x-1)];
     if (id==WALL) {
         return true;
-    }
+    }		
+	if (creature_in_position(player, player->x,player->y)) {
+		return true;
+	} 
     return false;
     
 }
@@ -162,6 +203,13 @@ struct creature * handle_input(int val, struct creature * player, char * screenm
 	return player;
 }
 
+void clear_sidebar(char start, char end){
+	for (char i=start; i < end; i++) {
+		gotoxy(2,i);
+		printf("%*s", 13, " ");
+	}
+}
+
 void roguelike() {
 	enum { KEY_ESC = 27, KEY_ENTER = '\r', KEY_BACKSPACE = 8, 
 		CTRL_S = 19, CTRL_P = 16, CTRL_Q = 17, CTRL_B = 2,
@@ -176,8 +224,9 @@ void roguelike() {
 	head->next = create_creature("monsu", 'M', RED, 16+20, 20);
 
 	/* store player for convenience*/
-	struct creature * player = critters;
-
+	struct creature * player = critters;	
+	struct statistics s_pl = {.atk = 11, .def = 8, .hp = 5, .max_hp = 5};
+	player->stats = s_pl;
 	
 	//construct terrain
 //	for (int i = 0; i <2; i++){
@@ -240,16 +289,20 @@ void roguelike() {
 	_setcursortype(_NOCURSOR);
 	_setcursortype(0);
 	while((val=getch())!=CTRL_Q) {
+		clear_sidebar(6,13);
 		erase_creatures(head, &screenmap[0][0], terrain);
 		player = handle_input(val, player, (char *)screenmap);
 		head = update_creature_position(head, player->name, player->x, player->y);
 		draw_creatures(head);
 		textcolor(WHITE);		
 		putchxy(2, 2, ':');
-		printf("Test");
+		printf("test\n");
+		//printf("%d",player->stats.def);		
+		print_creature_stats(player, 0);	
 		_setcursortype(_NOCURSOR);
 		_setcursortype(0);
     }
 	_setcursortype(_NORMALCURSOR);
 	textcolor(YELLOW);
+	clrscr();
 }

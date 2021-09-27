@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <conio2.h>
 #include <string.h>
+#include <wchar.h>
 
 #include "edit.h"
 
