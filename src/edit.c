@@ -34,7 +34,8 @@ int save_file(struct list *data){
 		//debug
 		wprintf(L"%s", data->line);
 		//write
-		len = wcstombs(mbstr, data->line, 160);
+		len = wcslen(data->line);
+		wcstombs(mbstr, data->line, len+1);
 		fwrite(mbstr, sizeof(char), len,file);
 		data = data->next;
 	}
@@ -92,9 +93,9 @@ struct list * init_node() {
 	return l;
 }
 void store_and_next_node(struct list *l, const wchar_t * buf) {
-	memcpy(l->line, buf, 80*sizeof(wchar_t)); 
+	memcpy(l->line, buf, 80*sizeof(wchar_t));
 	l->next = init_node();
-} 
+}
 
 wchar_t * bitstr_to_str(wchar_t *buf){
 	int i=0, j=0;
@@ -126,7 +127,7 @@ wchar_t * str_to_bitstr(wchar_t * buf){
 	int i=0;
 	wchar_t * out = malloc(9*80*sizeof(wchar_t));
 	int bits[8] = { 128, 64, 32, 16, 8, 4, 2, 1 };
-	
+
 	//char out[9*80];
 	while(buf[i]){
 		//we have a number...
@@ -148,9 +149,9 @@ wchar_t * str_to_bitstr(wchar_t * buf){
 }
 
 void rewind_cmd_key(int i, wchar_t *buf, wchar_t *line){
-	if (i!=0){ 
-		buf[i-1] = '\0'; 
-	} else { //last char in line is 'reserved'. 
+	if (i!=0){
+		buf[i-1] = '\0';
+	} else { //last char in line is 'reserved'.
 		line[78] = '\0';
 	}
 }
@@ -159,9 +160,9 @@ void edit_mode(){
 	clrscr();
 	_setcursortype(20);
 	//ctrl or modal?
-	enum { KEY_ESC = 27, KEY_ENTER = '\r', KEY_BACKSPACE = 8, 
+	enum { KEY_ESC = 27, KEY_ENTER = '\r', KEY_BACKSPACE = 8,
 		CTRL_S = 19, CTRL_P = 16, CTRL_B = 2, CTRL_D = 4,
-		CTRL_O = 15, 
+		CTRL_O = 15,
 		KEY_UP = 72, KEY_DOWN = 80, KEY_LEFT = 75, KEY_RIGHT = 77};
 	int i=0;
 	wchar_t buf[80];
@@ -178,12 +179,12 @@ void edit_mode(){
 	struct list *head = l;
 	//struct list * tmp = head;
 	while((val = getch())!=KEY_ESC){
-		buf[i]=(wchar_t)val;	
+		buf[i]=(wchar_t)val;
 		//printf("%c", buf[i]);
 		i++;
 		buf[i]='\0';
 		//if (i<79 && l==NULL) l=malloc(sizeof(struct list));
-		if (i==79) {			
+		if (i==79) {
 			i=0;
 			store_and_next_node(l, buf);
 			l=l->next;
@@ -215,7 +216,7 @@ void edit_mode(){
 				gotoxy(1, wherey());
 				clreol();
 				wprintf(L"%s", buf);
-				
+
 				//TBD
 				break;
 			case CTRL_S:
@@ -237,7 +238,7 @@ void edit_mode(){
 				textcolor(YELLOW);
 				printf("Editor");
 				clreol();
-				textcolor(LIGHTGRAY);	
+				textcolor(LIGHTGRAY);
 				gotoxy(tmpx, tmpy);
 				//val = KEY_ENTER;
 				val=0;
@@ -254,7 +255,7 @@ void edit_mode(){
 				textcolor(YELLOW);
 				printf("Editor");
 				clreol();
-				textcolor(LIGHTGRAY);	
+				textcolor(LIGHTGRAY);
 				gotoxy(tmpx, tmpy);
 				//val = KEY_ENTER;
 				val=0;
@@ -271,7 +272,7 @@ void edit_mode(){
 					i=0;
 					store_and_next_node(l, buf);
 					l=l->next;
-				}		
+				}
 				break;
 			case CTRL_D: //print characters of bitstream
 				rewind_cmd_key(i, buf, l->line);
@@ -285,7 +286,7 @@ void edit_mode(){
 					i=0;
 					store_and_next_node(l, buf);
 					l=l->next;
-				}		
+				}
 				break;
 			case KEY_UP:
 			case KEY_DOWN:
@@ -306,12 +307,12 @@ void edit_mode(){
 					tmp=tmp->next;
 				}
 				tmp = head;
-				if (i!=0){	
+				if (i!=0){
 					memcpy(l->line, buf, i*sizeof(wchar_t));
 					wprintf(L"%s",tmp->line);
 				}
 				gotoxy(tmpx, tmpy);*/
-				break;				
+				break;
 			default:
 				if (0 != val) wprintf(L"%c", (wchar_t)val);
 				//dbg code
@@ -326,9 +327,8 @@ void edit_mode(){
 	while(head->next!=NULL){
 		free(head->line);
 		head=head->next;
-	}	
+	}
 	free(l);
 	_setcursortype(_NOCURSOR);
 	textcolor(YELLOW);
 }
-
