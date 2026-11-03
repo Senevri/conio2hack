@@ -174,7 +174,7 @@ int main(int argc, char *argv[])
 	gotoxy(1, 2);
 	if (argc > 1){
 		for (int i=0; i<argc;i++) {
-			printf(argv[i]);
+			printf("%s", argv[i]);
 			printf("\n");
 		}
 		parse_cmd(argv[argc-1]);
