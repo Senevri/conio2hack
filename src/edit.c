@@ -4,166 +4,302 @@
 #include <string.h>
 #include <wchar.h>
 #include <errno.h>
+#include <locale.h> // Add this for setlocale
 
 #include "edit.h"
 
 struct text_info info;
+// gettextinfo( &info );
 
-//end header part
+#define MAX_FILENAME_LENGTH 256
+#define MAX_LINE_LENGTH 80
+
+// Forward declarations
+wchar_t *bitstr_to_str(wchar_t *buf);
+void gotoxy(int x, int y);
+void clear_buffer(wchar_t *buf);
+void scroll_screen(struct list *l, struct cursor c, int amount);
+int add_extra_buffer(struct list *l, wchar_t *buf, int i);
+void dump_list(struct list *l);
+void reset_header();
+
+void reset_header() {
+    gotoxy(1,1);
+    textcolor(YELLOW);
+    printf("Editor");
+    clreol();
+    textcolor(LIGHTGRAY);
+}
+
+void dump_list(struct list *l) {
+    struct list *tmp = l;
+    while (tmp != NULL) {
+        printf("%ls\n", tmp->line);
+        tmp = tmp->next;
+    }
+}
+
+void clear_buffer(wchar_t *buf) {
+    if (buf == NULL) {
+        return;
+    }
+
+    for (int i = 0; i < MAX_LINE_LENGTH; i++) {
+        buf[i] = L'\0';
+    }
+
+}
+
+
+void restore_screen(struct list *l, struct cursor c)
+{
+    clrscr();
+    gotoxy(1,2);
+    struct list *tmp = l;
+    while (tmp != NULL) {
+        printf("%ls\n", tmp->line);
+        tmp = tmp->next;
+    }
+    gotoxy(c.x, c.y);
+}
+
+
+
+wchar_t * erase_last_character(wchar_t *buf) {
+    int i = wcslen(buf) - 1;
+    buf[i] = L'\0';
+    // buf[i - 1] = L'\0';
+    return buf;
+}
+
+void scroll_screen(struct list *l, struct cursor c, int amount) {
+    clrscr();
+    gotoxy(1,2);
+    struct list *tmp = l;
+    int cur_line = 1; // screen line
+    int max_lines = info.screenheight -3; // header, footer
+    //rewind
+
+    // should handle paging?
+    while (amount != 0) {
+        if (amount > 0) tmp = tmp->next;
+        if (amount < 0) tmp = tmp->prev;
+        amount = amount + (amount > 0 ? -1 : 1);
+    }
+
+    while (tmp != NULL) {
+        printf("%ls\n", tmp->line);
+        tmp = tmp->next;
+        cur_line++;
+        if (cur_line > max_lines) {
+            break;
+        }
+    }
+    gotoxy(c.x, c.y);
+
+}
+
+
 int save_file(struct list *data){
-    enum {MAX = 256};
-    char filename[MAX];
-    FILE * file;
-    char mbstr[160];
-    int len;
-    
+    char filename[MAX_FILENAME_LENGTH];
+    FILE *file;
+    char *mbstr;
+    size_t len;
+
     if (data == NULL || data->line == NULL) {
         printf("Error: Invalid data structure\n");
         return -1;
     }
-    
+
     printf("Enter filename to save: ");
-    if (fgets(filename, MAX, stdin) == NULL) {
+    if (fgets(filename, MAX_FILENAME_LENGTH, stdin) == NULL) {
         printf("Error reading filename: %s\n", strerror(errno));
         return -1;
     }
-    
-    // Remove newline character if present
+
     filename[strcspn(filename, "\n")] = '\0';
-    
-    if (strcmp(filename, "") == 0) return -1;
-    
-    clrscr();
+
+    if (strcmp(filename, "") == 0) {
+        printf("Error: Filename cannot be empty\n");
+        return -1;
+    }
+
+    // clrscr(); // No. This is a bug
     gotoxy(1,1);
     clreol();
     printf("%s\n", filename);
-    
+
     file = fopen(filename, "w");
     if (file == NULL) {
         printf("Error opening file: %s\n", strerror(errno));
         return -1;
     }
-    
+
     struct list *current = data;
     while (current != NULL) {
-        clreol();
-        wprintf(L"%s", current->line);
         len = wcslen(current->line);
-        wcstombs(mbstr, current->line, len + 1);
+        if (len == 0) {
+            current->line = L"\n";
+            len = 1;
+        }
+
+        mbstr = malloc((len + 1) * sizeof(char));
+        if (mbstr == NULL) {
+            printf("Error: Failed to allocate memory for mbstr\n");
+            fclose(file);
+            return -1;
+        }
+
+        if (wcstombs(mbstr, current->line, len + 1) == (size_t)-1) {
+            printf("Error converting wide char to multibyte: %s\n", strerror(errno));
+            free(mbstr);
+            fclose(file);
+            return -1;
+        }
+
         fwrite(mbstr, sizeof(char), len, file);
+        free(mbstr);
         current = current->next;
     }
-    
-    fputc((wchar_t)0, file);
+
     fclose(file);
     return 1;
 }
 
 struct list* load_file(struct list *data){
-    enum {MAX = 256};
-    char filename[MAX];
-    
+    char filename[MAX_FILENAME_LENGTH];
+
     if (data == NULL) {
         printf("Error: Invalid data structure\n");
         return NULL;
     }
-    
+
     printf("Enter filename to load: ");
-    if (fgets(filename, MAX, stdin) == NULL) {
+    if (fgets(filename, MAX_FILENAME_LENGTH, stdin) == NULL) {
         printf("Error reading filename: %s\n", strerror(errno));
         return NULL;
     }
-    
-    // Remove newline character if present
+
     filename[strcspn(filename, "\n")] = '\0';
-    
-    if (strcmp(filename, "") == 0) return NULL;
+
+    if (strcmp(filename, "") == 0) {
+        printf("Error: Filename cannot be empty\n");
+        return NULL;
+    }
+
     return load_file_by_filename(data, filename);
 }
 
+
+
 struct list* load_file_by_filename(struct list* data, const char* filename) {
-    FILE * file;
-    wchar_t buf[80];
-    
+    FILE *file;
+    wchar_t buf[MAX_LINE_LENGTH]; // line buffer
+
     if (data == NULL) {
         printf("Error: Invalid data structure\n");
         return NULL;
     }
-    
-    // Free existing data
+
+    // 1. Free existing data COMPLETELY
     struct list *current = data;
-    while (current->next != NULL) {
+    while (current != NULL) {
         struct list *tmp = current;
         free(current->line);
         current = current->next;
         free(tmp);
     }
-    
-    data = init_node();
-    
+
+    // 2. Create a fresh head node
+    struct list *new_head = init_node();
+    if (new_head == NULL) {
+        printf("Error: Failed to initialize editor\n");
+        return NULL;
+    }
+
     clrscr();
     gotoxy(1,1);
     clreol();
     printf("%s\n", filename);
-    
+
     file = fopen(filename, "r");
     if (file == NULL) {
         printf("Error opening file: %s\n", strerror(errno));
+        free(new_head->line);
+        free(new_head);
         return NULL;
     }
-    
-    while (fgetws(buf, 80, file) != NULL) {
-        store_and_next_node(data, buf);
-        fprintf(stdout, "%ls", buf);
+
+    // 3. Properly advance the pointer while reading
+    struct list *curr = new_head;
+    while (fgetws(buf, MAX_LINE_LENGTH, file) != NULL) {
+        wcscpy(curr->line, buf);
+        curr->next = init_node();
+        if (curr->next == NULL) {
+            break;
+        }
+        curr = curr->next;
+        wprintf(L"%ls", buf);
     }
-    
+
     fclose(file);
-    return data;
+    return new_head;
 }
 
 struct list * init_node() {
-    struct list * l = malloc(sizeof(struct list));
+    struct list *l = malloc(sizeof(struct list));
     if (l == NULL) {
         printf("Error: Failed to allocate memory for list node\n");
         return NULL;
     }
-    
-    l->line = malloc(80 * sizeof(wchar_t));
+
+    l->line = malloc(MAX_LINE_LENGTH * sizeof(wchar_t));
     if (l->line == NULL) {
         printf("Error: Failed to allocate memory for line\n");
         free(l);
         return NULL;
     }
-    
+
     l->line[0] = 0;
     l->next = NULL;
+    l->prev = NULL;
+    l->line_number = 1;
     return l;
 }
 
-void store_and_next_node(struct list *l, const wchar_t * buf) {
-    if (l == NULL) return;
-    
+struct list * store_and_next_node(struct list *l, const wchar_t *buf) {
+    if (l == NULL) return NULL;
     wcscpy(l->line, buf);
-    l->next = init_node();
+    if (l->next == NULL) {
+        l->next = init_node();
+        l->next->line_number = l->line_number + 1;
+        l->next->prev = l;
+    }
+    // l = l->next; // allegedly does nothing
+    return l->next;
 }
 
-wchar_t * bitstr_to_str(wchar_t *buf){
+wchar_t *bitstr_to_str(wchar_t *buf) {
     int i=0, j=0;
     int bitpos=0;
     int bits[8] = { 128, 64, 32, 16, 8, 4, 2, 1 };
-    wchar_t * out = calloc(80, sizeof(wchar_t));
+    wchar_t *out = calloc(MAX_LINE_LENGTH, sizeof(wchar_t));
     if (out == NULL) {
         printf("Error: Failed to allocate memory for bitstr_to_str\n");
         return NULL;
     }
-    
+
     while(buf[i]){
         switch (buf[i]){
-            case '1':
-            case '0':
-                out[j] += atoi((const char *)&buf[i])*bits[bitpos];
+            case L'1':
+            case L'0':
+                // FIXED: Replaced dangerous atoi cast with simple ternary
+                {
+                    int bit_val = (buf[i] == L'1') ? 1 : 0;
+                    out[j] += bit_val * bits[bitpos];
+                }
                 bitpos++;
-                if (8==bitpos) {
+                if (8 == bitpos) {
                     bitpos = 0;
                     j++;
                 }
@@ -173,231 +309,308 @@ wchar_t * bitstr_to_str(wchar_t *buf){
         }
         i++;
     }
-    out[j+1]='\0';
+    out[j] = L'\0'; // FIXED: Correct null termination index
     return out;
 }
 
-wchar_t * str_to_bitstr(wchar_t * buf){
+wchar_t *str_to_bitstr(wchar_t *buf){
     int i=0;
-    wchar_t * out = malloc(9*80*sizeof(wchar_t));
+    // FIXED: Added +1 for null terminator to prevent buffer overflow
+    wchar_t *out = malloc((9 * MAX_LINE_LENGTH + 1) * sizeof(wchar_t));
     if (out == NULL) {
         printf("Error: Failed to allocate memory for str_to_bitstr\n");
         return NULL;
     }
-    
+
     int bits[8] = { 128, 64, 32, 16, 8, 4, 2, 1 };
-    
+
     while(buf[i]){
         int tmp = (int)buf[i];
-        for (int j=0; j!=8; j++) {
-            if (tmp-bits[j]>=0) {
-                out[(j)+i*9] = '1';
-                tmp-=bits[j];
+        if (tmp > 255) tmp = 255; // Clamp to 8 bits for this simple converter
+
+        for (int j=0; j<8; j++) {
+            if (tmp - bits[j] >= 0) {
+                out[j + i*9] = L'1';
+                tmp -= bits[j];
             } else {
-                out[j+i*9] = '0';
+                out[j + i*9] = L'0';
             }
         }
-        out[8+i*9] = ' ';
+        out[8 + i*9] = L' ';
         i++;
     }
-    out[i*9] = '\0';
+    out[i*9] = L'\0';
     return out;
 }
 
-void rewind_cmd_key(int i, wchar_t *buf, wchar_t *line){
-    if (i!=0){
-        buf[i-1] = '\0';
-    } else {
-        line[78] = '\0';
-    }
+void print_help(){
+    clrscr();
+    _setcursortype(20);
+    reset_header();
+    gotoxy(1,2);
+    textcolor(LIGHTGRAY);
+    const char *help = "\
+    \n\
+    Commands:\n\
+    Ctrl-S: Save\n\
+    Ctrl-P: Print\n\
+    Ctrl-B: Current line to binary?\n\
+    Ctrl-D: Current line to decimal?\n\
+    Ctrl-O: Open\n\
+    Ctrl-?: Help\n";
+    printf("%s", help);
+    textcolor(WHITE);
 }
 
+int add_extra_buffer(struct list *l, wchar_t *buf, int i){
+    if (i == MAX_LINE_LENGTH - 1) {
+        l = store_and_next_node(l, buf);
+        if (l == NULL) {
+            printf("Error: Failed to store line\n");
+            return 0;
+        }
+        // multiple buffer, same line number
+        l->line_number=l->prev->line_number;
+        memset(buf, 0, MAX_LINE_LENGTH * sizeof(wchar_t));
+    } else {
+        return 0;
+    }
+    return 1;
+}
 void edit_mode(){
     clrscr();
     _setcursortype(20);
     enum { KEY_ESC = 27, KEY_ENTER = '\r', KEY_BACKSPACE = 8,
         CTRL_S = 19, CTRL_P = 16, CTRL_B = 2, CTRL_D = 4,
-        CTRL_O = 15,
+        CTRL_O = 15, CTRL_Q = 17, CTRL_HELP = -1,
         KEY_UP = 72, KEY_DOWN = 80, KEY_LEFT = 75, KEY_RIGHT = 77};
-    
-    int i=0;
-    wchar_t buf[80];
+
+    int i = 0;
+    wchar_t buf[MAX_LINE_LENGTH];
     int val;
-    int tmpx, tmpy;
-    wchar_t * bits;
-    
+    wchar_t *bits;
+
+    struct cursor c = {1,2};
+    printf("%c", 0x2588);
+
     struct list *l = init_node();
     if (l == NULL) {
         printf("Error: Failed to initialize editor\n");
         return;
     }
-    
-    gotoxy(1,1);
-    printf("Editor\n");
-    textcolor(LIGHTGRAY);
-    
+
+    reset_header();
+
     struct list *head = l;
-    
-    while((val = getch())!=KEY_ESC){
-        if (i < 79) {
-            buf[i]=(wchar_t)val;
-            buf[i+1]='\0';
-        }
-        
-        if (i==79) {
-            i=0;
-            store_and_next_node(l, buf);
-            if (l->next == NULL) {
-                printf("Error: Failed to store line\n");
-                break;
+    memset(buf, 0, MAX_LINE_LENGTH * sizeof(wchar_t));
+    gotoxy(c.x, c.y);
+
+    while((val = getch()) != KEY_ESC){
+        // 1. FIXED: Handle extended keys (arrow keys, function keys)
+        if (val == 0 || val == 224) {
+            val = getch(); // Consume the actual scan code
+
+            // Prevent arrow keys from corrupting the buffer.
+            // (Full cursor navigation requires tracking X/Y separately)
+            switch(val) {
+                // utilize fallthrough
+                case KEY_UP:
+                    if (l->prev == NULL) {
+                        // cursor may be in wrong position, allow scrolling in that case.
+                        if (c.y > 2){
+                            c.y -= 1;
+                        }
+                        break;
+                    };
+                    if (c.y <= 2) {
+                        scroll_screen(l, c, -1);
+                        c.y = 2;
+                    }
+                    c.y -= 1;
+                    wcscpy(l->line, buf); // store current line
+                    l = l->prev;
+                    wcscpy(buf, l->line); // load previous line
+                    i = wcslen(l->line);
+                    if (c.x > i+1) c.x = i+1;
+                    break;
+                case KEY_DOWN:
+                    c.y += 1;
+                    l = store_and_next_node(l, buf);
+                    if (wcslen(l->line) > 0) {
+                        i = wcslen(l->line);
+                        wcscpy(buf, l->line);
+                    } else {
+                        clear_buffer(buf);
+                    }
+                    if (c.y > info.screenheight - 2) {
+                        c.y = info.screenheight - 2;
+                        scroll_screen(l, c, 1);
+                    }
+                    break;
+                case KEY_LEFT:
+                    if (c.x <= 1) break;
+                    c.x -= 1;
+                    i--;
+                    break;
+                case KEY_RIGHT:
+                    c.x += 1;
+                    if (buf[i] == L'\0') {
+                        buf[i] = L' ';
+                    }
+                    i++;
+
+                    if (i > MAX_LINE_LENGTH - 1) {
+                        i = 0;
+                        l = store_and_next_node(l, buf);
+                        clear_buffer(buf);
+                    }
+                    break;
             }
-            l=l->next;
-            memset(buf, 0, 80*sizeof(wchar_t));
+            //debug
+            switch (val) {
+                case KEY_UP: case KEY_DOWN: case KEY_LEFT: case KEY_RIGHT:
+                    gotoxy(1, info.screenheight - 1);
+                    clreol();
+                    printf("key %d, x%d, y%d line %d", val, c.x, c.y, l->line_number);
+                    gotoxy(c.x, c.y);
+                    continue; // Skip normal character processing
+            }
         }
-        
+
+        int extra = 0;
+
         switch (val){
             case KEY_ENTER:
-                gotoxy(1, (wherey()+1));
-                tmpy = wherey();
-                if (i<79) {
-                    buf[i]='\n';
-                    buf[i+1]='\0';
+                c.y++; c.x = 1;
+                l = store_and_next_node(l, buf);
+                if (l == NULL) {
+                    printf("Error: Failed to store line\n");
+                    break;
                 }
-                if (i!=0){
-                    i=0;
-                    store_and_next_node(l, buf);
-                    if (l->next == NULL) {
-                        printf("Error: Failed to store line\n");
-                        break;
-                    }
-                    l=l->next;
-                }
+                i = 0;
+                clear_buffer(buf);
                 break;
+
             case KEY_BACKSPACE:
                 if (i > 0) {
-                    rewind_cmd_key(i-1, buf, l->line);
-                    i-=2;
-                    wcscpy(&buf[i], &buf[i+2]);
-                    gotoxy(1, wherey());
-                    clreol();
-                    wprintf(L"%s", buf);
+                    buf[i-1] = L'\0';
+                    i--;
+                    c.x--;
+                    gotoxy(c.x, c.y);
+                    putch(L' ');
+                    //wprintf(L"%ls", buf);
                 }
                 break;
+
             case CTRL_S:
-                rewind_cmd_key(i, buf, l->line);
-                tmpx = wherex();
-                tmpy = wherey();
+                // Ensure current line is saved before writing to disk
+                l = store_and_next_node(l, buf);
+                clrscr();
+                gotoxy(1,2);
+                dump_list(head);
+
                 gotoxy(1, info.screenheight);
                 printf("Save file: ");
                 clreol();
-                if (i!=0){
-                    i=0;
-                    store_and_next_node(l, buf);
-                    if (l->next == NULL) {
-                        printf("Error: Failed to store line\n");
-                        break;
-                    }
-                    l=l->next;
-                }
+                i = 0;
+                clear_buffer(buf);
+
                 if (save_file(head) == -1) {
                     printf("Failed to save file\n");
                 }
-                gotoxy(1,1);
-                textcolor(YELLOW);
-                printf("Editor");
-                clreol();
-                textcolor(LIGHTGRAY);
-                gotoxy(tmpx, tmpy);
+
+                reset_header();
                 break;
+
             case CTRL_O:
-                rewind_cmd_key(i, buf, l->line);
-                tmpx = wherex();
-                tmpy = wherey();
+                c.x = wherex();
+                c.y = wherey();
                 gotoxy(1, info.screenheight);
                 printf("Load file: ");
                 clreol();
-                if (i!=0){
-                    i=0;
-                    store_and_next_node(l, buf);
-                    if (l->next == NULL) {
-                        printf("Error: Failed to store line\n");
-                        break;
-                    }
-                    l=l->next;
-                }
-                if (load_file(head) == NULL) {
+
+                store_and_next_node(l, buf);
+                if (l->next != NULL) l = l->next;
+                i = 0;
+                memset(buf, 0, MAX_LINE_LENGTH * sizeof(wchar_t));
+
+                // 4. FIXED: Actually assign the returned head pointer
+                struct list *new_head = load_file(head);
+                if (new_head == NULL) {
                     printf("Failed to load file\n");
+                } else {
+                    head = new_head;
+                    l = head;
+                    while (l->next != NULL) {
+                        l = l->next;
+                    }
+                    wcscpy(buf, l->line);
+                    i = wcslen(buf);
                 }
-                gotoxy(1,1);
-                textcolor(YELLOW);
-                printf("Editor");
-                clreol();
-                textcolor(LIGHTGRAY);
-                gotoxy(tmpx, tmpy);
+
+                reset_header();
                 break;
+
             case CTRL_B:
-                rewind_cmd_key(i, buf, l->line);
-                tmpy = wherey();
-                gotoxy(1, tmpy+1);
+                gotoxy(1, c.y++);
                 bits = str_to_bitstr(buf);
                 if (bits != NULL) {
-                    wprintf(L"%s", bits);
+                    wprintf(L"%ls", bits);
                     free(bits);
                 }
-                gotoxy(1, wherey()+1);
-                if (i!=0){
-                    i=0;
-                    store_and_next_node(l, buf);
-                    if (l->next == NULL) {
-                        printf("Error: Failed to store line\n");
-                        break;
-                    }
-                    l=l->next;
-                }
+                gotoxy(1, c.y++);
                 break;
+
             case CTRL_D:
-                rewind_cmd_key(i, buf, l->line);
-                tmpy = wherey();
-                gotoxy(1, tmpy+1);
+                c.y++;
+                gotoxy(1, c.y);
                 bits = bitstr_to_str(buf);
                 if (bits != NULL) {
-                    wprintf(L"%s", bits);
+                    wprintf(L"%ls", bits);
                     free(bits);
                 }
-                gotoxy(1, wherey()+1);
-                if (i!=0){
-                    i=0;
-                    store_and_next_node(l, buf);
-                    if (l->next == NULL) {
-                        printf("Error: Failed to store line\n");
-                        break;
-                    }
-                    l=l->next;
-                }
+                gotoxy(1, c.y++);
                 break;
-            case KEY_UP:
-            case KEY_DOWN:
-            case KEY_LEFT:
-            case KEY_RIGHT:
-                rewind_cmd_key(i-1, buf, l->line);
-                gotoxy(1, wherey());
-                clreol();
-                wprintf(L"%s", buf);
-                i--;
-                break;
+
             case CTRL_P:
                 break;
-            default:
-                if (0 != val) wprintf(L"%c", (wchar_t)val);
-                tmpx = wherex();
-                tmpy = wherey();
-                gotoxy(10,1);
-                wprintf(L"%2d %s", i, buf);
-                gotoxy (tmpx, tmpy);
+
+            case CTRL_HELP:
+                c.x = wherex();
+                c.y = wherey();
+                gotoxy(1, 2);
+                print_help();
+                restore_screen(l, c);
                 break;
-        };
+
+            default:
+                extra = add_extra_buffer(l, buf, i);
+                if (extra == 1){
+                    l = l->next;
+                    i = 0;
+                }
+                if (val != 0) {
+                    wprintf(L"%lc", (wchar_t)val);
+                }
+                if (buf[0] == '\0') {
+                    wcsncpy(buf, L" ", i);
+                }
+                buf[i++] = (wchar_t)val;
+                buf[i] = '\0';
+                c.x = wherex();
+                c.y = wherey();
+                break;
+        }
+        wcscpy(l->line, buf); // FIXED: Use wcscpy to save line
+        // update "UI"
+        gotoxy(1,info.screenheight-1);
+        wprintf(
+            L"%d %2d %ls",
+            l->line_number, i, buf); // FIXED: %ls for wchar_t string
+        clreol();
+        gotoxy(c.x, c.y);
     }
-    
+
     // Free all allocated memory
     struct list *current = head;
     while (current != NULL) {
@@ -406,7 +619,7 @@ void edit_mode(){
         free(current);
         current = next;
     }
-    
+
     _setcursortype(_NOCURSOR);
     textcolor(YELLOW);
 }

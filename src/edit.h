@@ -1,9 +1,15 @@
 // header file
 struct list{
 	wchar_t * line;
+	int line_number;
 	struct list * next;
+	struct list * prev;
 };
 
-struct list * init_node();
-void store_and_next_node(struct list *l, const wchar_t * buf);
+struct cursor{
+	int x, y;
+};
+
+struct list* init_node();
+struct list* store_and_next_node(struct list *l, const wchar_t * buf);
 struct list* load_file_by_filename(struct list*, const char*);
