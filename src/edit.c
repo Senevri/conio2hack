@@ -9,7 +9,6 @@
 #include "edit.h"
 
 struct text_info info;
-// gettextinfo( &info );
 
 #define MAX_FILENAME_LENGTH 256
 #define MAX_LINE_LENGTH 80
@@ -22,6 +21,14 @@ void scroll_screen(struct list *l, struct cursor c, int amount);
 int add_extra_buffer(struct list *l, wchar_t *buf, int i);
 void dump_list(struct list *l);
 void reset_header();
+void shift_buffer(wchar_t *buf, int i, int direction);
+
+void shift_buffer(wchar_t *buf, int i, int direction) {
+    wchar_t *tmp = malloc(MAX_LINE_LENGTH * sizeof(wchar_t));
+    wcscpy(tmp, buf + i);
+    wcsncpy(buf + i + direction, tmp, MAX_LINE_LENGTH - i);
+    free(tmp);
+}
 
 void reset_header() {
     gotoxy(1,1);
@@ -116,6 +123,7 @@ int save_file(struct list *data){
         printf("Error reading filename: %s\n", strerror(errno));
         return -1;
     }
+    gotoxy(1,1);
 
     filename[strcspn(filename, "\n")] = '\0';
 
@@ -137,30 +145,40 @@ int save_file(struct list *data){
 
     struct list *current = data;
     while (current != NULL) {
+        if (current->line == NULL) {
+            current->line = malloc(MAX_LINE_LENGTH * sizeof(wchar_t));
+        }
         len = wcslen(current->line);
+
         if (len == 0) {
-            current->line = L"\n";
+            current->line[0] = L'\0';
             len = 1;
         }
 
-        mbstr = malloc((len + 1) * sizeof(char));
+        size_t capacity = 4 * (len + 1);
+        mbstr = malloc(capacity);
+
         if (mbstr == NULL) {
             printf("Error: Failed to allocate memory for mbstr\n");
             fclose(file);
             return -1;
         }
 
-        if (wcstombs(mbstr, current->line, len + 1) == (size_t)-1) {
+        size_t bytes = wcstombs(mbstr, current->line, capacity);
+
+        if (bytes == (size_t)-1) {
             printf("Error converting wide char to multibyte: %s\n", strerror(errno));
             free(mbstr);
             fclose(file);
             return -1;
         }
 
-        fwrite(mbstr, sizeof(char), len, file);
+        fwrite(mbstr, sizeof(char), bytes, file);
+        fputc('\n', file);
         free(mbstr);
         current = current->next;
     }
+
 
     fclose(file);
     return 1;
@@ -493,12 +511,16 @@ void edit_mode(){
 
             case KEY_BACKSPACE:
                 if (i > 0) {
-                    buf[i-1] = L'\0';
+                    shift_buffer(buf, i, -1);
                     i--;
-                    c.x--;
+                    c.x = i;
+                    if (c.x < 1) {
+                        c.x = 1;
+                    }
                     gotoxy(c.x, c.y);
-                    putch(L' ');
-                    //wprintf(L"%ls", buf);
+
+                    printf("%ls", buf+i-1);
+                    c.x++;
                 }
                 break;
 
@@ -507,7 +529,7 @@ void edit_mode(){
                 l = store_and_next_node(l, buf);
                 clrscr();
                 gotoxy(1,2);
-                dump_list(head);
+
 
                 gotoxy(1, info.screenheight);
                 printf("Save file: ");
@@ -518,8 +540,9 @@ void edit_mode(){
                 if (save_file(head) == -1) {
                     printf("Failed to save file\n");
                 }
-
                 reset_header();
+                gotoxy(1,2);
+                dump_list(head);
                 break;
 
             case CTRL_O:
@@ -592,12 +615,16 @@ void edit_mode(){
                 if (val != 0) {
                     wprintf(L"%lc", (wchar_t)val);
                 }
-                if (buf[0] == '\0') {
-                    wcsncpy(buf, L" ", i);
+                for (int j=0; j<i+1; j++){
+                    if (buf[j] == L'\0') {
+                        buf[j] = L' ';
+                    }
                 }
+
+                shift_buffer(buf, i, 1);
                 buf[i++] = (wchar_t)val;
-                buf[i] = '\0';
-                c.x = wherex();
+                wprintf(L"%ls", buf+i );
+                c.x = c.x + 1;
                 c.y = wherey();
                 break;
         }
