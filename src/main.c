@@ -14,7 +14,7 @@ struct text_info info;
 /*struct list{
 	int * line;
 	struct list * next;
-}; */ 
+}; */
 
 void move_cursor_symbol(int x, int y){
 		gotoxy(x, y);
@@ -41,7 +41,7 @@ void eval_command(int cmd, char* params){
 			//printf("suor komento komento ");
 			edit_mode();
 			break;
-		case HACK: 
+		case HACK:
 			roguelike();
 			break;
 		case HELP:
@@ -50,7 +50,7 @@ void eval_command(int cmd, char* params){
 			//edit_mode();
 			load_file_by_filename(help, "README.asciidoc");
 			break;
-		default: 
+		default:
 			printf("ERRORERROR");
 	}
 	//parse_cmd(params);
@@ -76,7 +76,7 @@ void parse_cmd(char* cmd) {
 		i++;
 	}
 	cword[i] = '\0'; //null-terminate
-	
+
 		//printf("+");
 	printf("=");
 	for(int k=0; commands[k] != NULL; k++){
@@ -84,10 +84,10 @@ void parse_cmd(char* cmd) {
 			printf("cmd found");
 			eval_command(k, (('\0' == cmd[i]) ? NULL : cmd+(i+1)));
 			//cword[j+1] = '\0'; // let's leave this loop
-		}	
+		}
 	}
-	
-	
+
+
 }
 void debug_show_keycode(int val){
 	int x, y;
@@ -116,6 +116,7 @@ void command_mode(struct text_info info) {
 				cmd[pos] = '\0';
                 // TODO: check for aliases
 				parse_cmd(cmd);
+				gettextinfo( &info );
 				gotoxy(1, info.screenheight);
 				printf("Command: ");
 				clreol();
@@ -123,13 +124,13 @@ void command_mode(struct text_info info) {
 				break;
 			case 8: //backspace
 				if (pos>0) {
-					pos = pos - 2; //backspace and the del'd chara 
+					pos = pos - 2; //backspace and the del'd chara
 
 					//cmd[pos+1] = '\0';
 					clreol();
 					backspace = 1;
 				}
-			default: 
+			default:
 				cmd[pos+backspace] = (char)val;
 				backspace=0;
 				debug_show_keycode(val);
@@ -189,15 +190,15 @@ int main(int argc, char *argv[])
 		gotoxy(cursorx, cursory);
 		if (INPUT==mode) {
 			switch (val) {
-				case 'a': 
-					if(cursorx>1) { 
+				case 'a':
+					if(cursorx>1) {
 						putchxy(cursorx, cursory, ' ');
 						move_cursor_symbol(cursorx-1, cursory);
 					}
 					break;
-			
+
 				case 'd': //go right to the edge but no further
-					if (cursorx<info.screenwidth) { 
+					if (cursorx<info.screenwidth) {
 						putchxy(cursorx, cursory, ' ');
 						move_cursor_symbol(cursorx+1, cursory);
 					}
@@ -224,14 +225,14 @@ int main(int argc, char *argv[])
 					case INPUT:
 						mode = COMMAND;
 						printf("Command: ");
-			
+
 						break;
 					case COMMAND:
 						printf("neverhere");
 						mode = INPUT;
 						break;
 
-				
+
 				}
 
 		}
@@ -239,7 +240,7 @@ int main(int argc, char *argv[])
 			command_mode(info);
 			//if(COMMAND == mode) mode = INPUT;
 			gotoxy(1, info.screenheight); //lowest row
-			printf("Input"); clreol();  
+			printf("Input"); clreol();
 			gotoxy(cursorx, cursory);
 		}
 		textcolor(LIGHTGRAY);
@@ -247,7 +248,7 @@ int main(int argc, char *argv[])
 		cursory = wherey();
 		gotoxy(1, info.screenheight-1);
 		//printf("this should go to bottom of the screen");
-		gotoxy(1, 1);        
+		gotoxy(1, 1);
 	}
 	/* restore the original screen */
 	puttext( 1, 1, info.screenwidth, info.screenheight, screen_buffer );

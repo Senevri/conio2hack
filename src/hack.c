@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdarg.h>
 #include <string.h>
 #include <stdbool.h>
 #include <conio2.h>
@@ -9,9 +10,15 @@ enum { KEY_UP = 72, KEY_DOWN = 80, KEY_LEFT = 75, KEY_RIGHT = 77 };
 
 struct text_info info; //filled in main
 
+const int SIDE_PANE_WIDTH = 20;
+
 struct list {
     wchar_t * line;
     struct list * next;
+};
+
+struct point {
+    int x, y;
 };
 
 struct area {
@@ -37,17 +44,26 @@ struct symbol {
 
 //gameplay related data
 struct statistics {
-    int atk, def, hp, max_hp;
+    int atk, def, hp, max_hp, kills;
 };
+
+const char * stat_titles[] = {
+    "ATK", "DEF", "HP", "MAX", "KILLS", NULL
+};
+
+
+const int NUM_STATS = 5;
 
 //any creature in game
 struct creature {
     char name[255];
+    int id;
     struct symbol sym;
     struct statistics stats;
     int x;
     int y;
     struct creature * next;
+    struct creature * prev;
 };
 
 enum TERRAIN { GRASS, WATER, WALL };
@@ -136,15 +152,14 @@ struct symbol get_terrain_symbol(const char * name) {
     return terrain[i];
 }
 
-int get_symbol_idx(const char * name) {
-    int i = 0;
-    for (i = 0; terrain[i].name != NULL; i++) {
-        if (0 == strcmp(name, terrain[i].name)) {
-            break;
-        }
+int get_symbol_idx(const char *name) {
+    for (int i = 0; i < MAX_TERRAIN_CHARS; i++) {
+        if (terrain[i].name && 0 == strcmp(name, terrain[i].name)) return i;
     }
-    return i;
+    return 0; // or get_symbol_idx("space") safely
 }
+
+
 char get_terrain(struct screen screen, int x, int y) {
         if (x < 0 || x >= screen.width || y < 0 || y >= screen.height) {
             return ' ';  /* default to floor at boundaries */
@@ -169,6 +184,9 @@ void full_refresh(char *screenmap, struct symbol symbols[256]) {
 }
 
 
+bool check_is_dirty_point(struct screen * scr, int x, int y) {
+    return scr->dirty[y * (info.screenwidth + 1) + x];
+}
 
 bool check_is_dirty(struct screen * scr, struct area area) {
     for (int y = area.y; y < area.y + area.height; y++) {
@@ -179,7 +197,15 @@ bool check_is_dirty(struct screen * scr, struct area area) {
     return false;
 }
 
-void mark_dirty(struct screen * scr, struct area area) {
+void mark_dirty(struct screen * scr, int x, int y) {
+    scr->dirty[y * (info.screenwidth + 1) + x] = true;
+}
+
+void mark_clean(struct screen * scr, int x, int y) {
+    scr->dirty[y * (info.screenwidth + 1) + x] = false;
+}
+
+void mark_dirty_area(struct screen * scr, struct area area) {
     for (int y = area.y; y < area.y + area.height; y++) {
         for (int x = area.x; x < area.x + area.width; x++) {
             scr->dirty[y * (info.screenwidth + 1) + x] = true;
@@ -187,7 +213,7 @@ void mark_dirty(struct screen * scr, struct area area) {
     }
 }
 
-void mark_clean(struct screen * scr, struct area area) {
+void mark_clean_area(struct screen * scr, struct area area) {
     for (int y = area.y; y < area.y + area.height; y++) {
         for (int x = area.x; x < area.x + area.width; x++) {
             scr->dirty[y * (info.screenwidth + 1) + x] = false;
@@ -197,6 +223,13 @@ void mark_clean(struct screen * scr, struct area area) {
 
 
 // --- Creature functions ---
+
+
+int * get_creature_stats(int * stats, struct creature cr) {
+    memcpy(stats, &cr.stats, sizeof(cr.stats));
+    return stats;
+}
+
 
 struct creature * get_last_creature(struct creature * critters) {
     struct creature * cr = critters;
@@ -237,74 +270,142 @@ struct creature* create_creature(const char * name, const char symbol, int color
     c->stats.def = 10;
     c->stats.hp = 5;
     c->stats.max_hp = 5;
+    c->stats.kills = 0;
     c->next = NULL;
+    c->prev = NULL;
+
+    if (c == NULL) {
+        printf("Error: Failed to create monster\n");
+        return NULL;
+    }
+
 
     return c;
 }
 
-static inline void draw_creature(struct creature * creature) {
+static inline void draw_creature(struct creature * creature, struct screen scr) {
     if (creature == NULL) return;
     textcolor(creature->sym.color);
     putchxy(creature->x, creature->y, creature->sym.character);
 }
 
-void draw_creatures(struct creature* critters) {
+void draw_creatures(struct creature* critters, struct screen scr) {
     struct creature * cr = critters;
     while (cr != NULL) {
-        draw_creature(cr);
+        draw_creature(cr, scr);
         cr = cr->next;
     }
 }
 
-void erase_creatures(struct creature * critters, char * screenmap, struct symbol symbols[256]) {
-    struct creature * cr = critters;
-    while (cr != NULL) {
-        unsigned char out = screenmap[(cr->y - 1) * (info.screenwidth + 1) + (cr->x - 1)];
+void erase_creatures(struct creature *critters, struct screen scr, struct symbol symbols[256]) {
+    char *screenmap = scr.screenmap;
+    for (struct creature *cr = critters; cr != NULL; cr = cr->next) {
+        if (!check_is_dirty_point(&scr, cr->x, cr->y)) continue;
+        int mx = cr->x - 1;   // map coords
+        int my = cr->y - 1;
+        if (mx < 0 || my < 0 || mx >= scr.width || my >= scr.height) continue;
+        unsigned char out = screenmap[my * (scr.width + 1) + mx];
         textcolor(symbols[out].color);
         putchxy(cr->x, cr->y, symbols[out].character);
-        cr = cr->next;
     }
 }
+
+int split_string(const char *string, char **lines, int max_lines, int max_length) {
+    int line_count = 0;
+    char *current_line = NULL;
+    int current_pos = 0;
+
+    for (int i = 0; i < strlen(string); i++) {
+        if (string[i] == '\n' || i - current_pos >= max_length) {
+            if (line_count >= max_lines) {
+                break;
+            }
+            current_line = malloc((i - current_pos + 1) * sizeof(char));
+            memcpy(current_line, string + current_pos, i - current_pos);
+            current_line[i - current_pos] = '\0';
+            lines[line_count++] = current_line;
+            current_pos = i + 1;
+        }
+    }
+    if (current_pos < strlen(string)) {
+        if (line_count < max_lines) {
+            current_line = malloc((strlen(string) - current_pos + 1) * sizeof(char));
+            memcpy(current_line, string + current_pos, strlen(string) - current_pos);
+            current_line[strlen(string) - current_pos] = '\0';
+            lines[line_count++] = current_line;
+        }
+    }
+    return line_count;
+}
+
+// --- UI functions ---
+
+const int MAX_LINES = 10;
+
+void write_side_pane(const char * string, int palette_color, int x_offset, int y_offset) {
+
+    // split to multiple lines
+    if (strlen(string) > SIDE_PANE_WIDTH-(2+x_offset)) {
+        char *lines[10];
+        int line_count = split_string(string, lines, MAX_LINES, SIDE_PANE_WIDTH-(2+x_offset));
+        for (int i = 0; i < line_count; i++) {
+            textcolor(palette_color);
+            gotoxy(1+x_offset, 1+i+y_offset);
+            printf("%s", lines[i]);
+            free(lines[i]);
+        }
+    } else {
+        textcolor(palette_color);
+        gotoxy(1+x_offset, 1+y_offset);
+        printf("%s", string);
+    }
+}
+
 
 void print_creature_stats(struct creature * cr, char offset_y) {
     if (cr == NULL) return;
 
-    char * stat_str[] = {
-        "ATK", "DEF", "HP", "MAX", NULL
-    };
+    //int num_stats = sizeof(cr->stats)/sizeof(int);
 
-    int * stats[] = {
-        &cr->stats.atk,
-        &cr->stats.def,
-        &cr->stats.hp,
-        &cr->stats.max_hp,
-        NULL
-    };
+    int * stats = (int *)&cr->stats;
 
+    textcolor(YELLOW);
     cputsxy(3, 2+offset_y, cr->name);
+    textcolor(WHITE);
 
-    for (int i = 0; stats[i] != NULL; i++) {
+    for (int i = 0; stat_titles[i] != NULL; i++) {
         gotoxy(3, 3 + offset_y + i);
-        printf("%s:%d", stat_str[i], *stats[i]);
+        printf("%-5s:%d", stat_titles[i], stats[i]);
     }
-    mark_dirty(_screen, (struct area) { 0, 0, info.screenwidth, info.screenheight });
+    mark_dirty_area(_screen, (struct area) { 0, 0, info.screenwidth, info.screenheight });
 }
 
+// const char * format(const char * fmt, ...) {
+//     va_list args;
+//     va_start(args, fmt);
+//     int buf_size = 1024*sizeof(char);
+//     const char * buffer = malloc(buf_size);
+//     vsnprintf(buffer, buf_size, fmt, args);
+//     va_end(args);
+//     return buffer; //memory leak?
+// }
+
 void update_creature_stat_display(struct creature * cr, int offset_y) {
+    getch();
     if (cr == NULL) return;
 
-    int * stats[] = {
-        &cr->stats.atk,
-        &cr->stats.def,
-        &cr->stats.hp,
-        &cr->stats.max_hp,
-        NULL
-    };
+    int * stats = (int *)&cr->stats;
 
-    for (int i = 0; stats[i] != NULL; i++) {
-        gotoxy(5, 3 + offset_y + i);
-        printf(":%d", *stats[i]);
+    // char * stat_str = malloc(10*sizeof(char));
+    // memset(stat_str, 0, 10*sizeof(char));
+    int xpos = 4+5;
+    char stat_str[10];
+    for (int i = 0; stat_titles[i] != NULL; i++) {
+        snprintf(stat_str, 10, "%d  ", stats[i]);
+        // write_side_pane(stat_str, YELLOW, 6, 1+i + 1+offset_y);
+        cputsxy(xpos, 2+ i + 1 +offset_y, stat_str);
     }
+    //free(stat_str);
 }
 
 
@@ -321,49 +422,80 @@ struct creature* creature_in_position(struct creature * head, int x, int y) {
     return NULL;
 }
 
-void clear_creature_stats(int offset_y) {
-    for (int i = 0; i <= 6; i++) {
-        int sum_dirty = 0;
-        for (int j = 0; j < 12; j++) {
-            sum_dirty += _screen->dirty[
-                (i + offset_y) * (info.screenwidth + 1) + j
-            ] ? 1 : 0;
-        };
-        if (sum_dirty == 0) continue;
-        cputsxy(3, i + offset_y, "       ");
-        for (int j = 0; j < 6; j++) {
-            _screen->dirty[(i + offset_y) * (info.screenwidth + 1 + j)] = false;
-        };
-
-    }
+void get_padded_string(const char *string, int length, char *out) {
+    memset(out, ' ', length);
+    size_t n = strlen(string);
+    if (n > (size_t)length) n = length;
+    memcpy(out, string, n);
+    out[length] = '\0';
 }
 
-bool movement_blocked(struct creature *player, char * screenmap) {
+void clear_creature_stats(int offset_y) {
+
+    int rows = NUM_STATS + 1;
+
+    bool is_dirty = check_is_dirty(
+        _screen, (struct area) { 1, offset_y, SIDE_PANE_WIDTH-2, rows }
+    );
+    if (!is_dirty) return;
+
+    char clearstr[SIDE_PANE_WIDTH-1];
+    memset(clearstr, ' ', SIDE_PANE_WIDTH-2);
+    clearstr[SIDE_PANE_WIDTH-2] = '\0';
+    for (int i = 0; i < NUM_STATS+3; i++) {
+        //write_side_pane(clearstr, BLACK, 1, offset_y+i);
+        cputsxy(2, offset_y+i, clearstr);
+    }
+    mark_clean_area(_screen, (struct area){ 1, offset_y, SIDE_PANE_WIDTH-2, rows });
+}
+
+bool movement_blocked(struct creature *player, char *screenmap, struct creature *monster) {
     if (player == NULL || screenmap == NULL) return true;
 
+    // Check for wall collision
     char id = screenmap[(player->y - 1) * (info.screenwidth + 1) + (player->x - 1)];
     if (id == get_symbol_idx("wall")) {
         return true;
     }
 
-    struct creature * cr = creature_in_position(player, player->x, player->y);
+    // Check for monster collision
+    struct creature *cr = creature_in_position(player, player->x, player->y);
     if (cr != NULL && strcmp(cr->name, player->name) != 0) {
-        print_creature_stats(cr, 6);
+        // Simple damage calculation
+        int damage = player->stats.atk - monster->stats.def;
+        if (damage < 0) damage = 0;
+        monster->stats.hp -= damage;
+
+        // Display damage message
+        print_creature_stats(monster, NUM_STATS +2 );
+        cputsxy(3, 4+NUM_STATS +2, "Damage dealt!");
+
+        // Check if monster is defeated
+        if (monster->stats.hp <= 0) {
+            cputsxy(11, 2+NUM_STATS +2, "defeated!");
+            player->stats.kills += 1;
+            // Remove monster from the game
+            struct creature* prev = player;
+            while (prev->next != monster) {
+                prev = prev->next;
+            }
+            prev->next = monster->next;
+            free(monster);
+            return false;
+        }
         return true;
     }
-    clear_creature_stats(7); // off by one bug maybe?
+    clear_creature_stats(NUM_STATS + 3);
     return false;
 }
 
-struct creature * handle_input(int val, struct creature * player, char * screenmap) {
-    if (player == NULL || screenmap == NULL) return NULL;
+struct creature * handle_input(int val, struct creature *player, struct screen scr, struct creature *monster) {
+    if (player == NULL || scr.screenmap == NULL) return NULL;
 
-    // testing suggestion
     int old_x = player->x;
     int old_y = player->y;
 
-
-    // struct creature tmp = *player;
+    // Handle player movement
     switch (val) {
         case KEY_UP:
             if (player->y > 2) {
@@ -385,27 +517,50 @@ struct creature * handle_input(int val, struct creature * player, char * screenm
                 player->x += 1;
             }
             break;
+        case '.':
+            break;
         default:
+            val = 0;
             break;
     }
 
+    if (val != '.') {
+        mark_dirty(&scr, old_x, old_y);
+    }
 
-    /* handle movement */
+    // Handle monster movement (simple AI)
+    if (monster != NULL && val > 0) {
+        struct point old_pos = { monster->x, monster->y };
+        // Simple AI: move toward player
+        if (monster->x < player->x && monster->x < info.screenwidth - 1) {
+            monster->x += 1;
+        } else if (monster->x > player->x && monster->x > SIDE_PANE_WIDTH - 1) {
+            monster->x -= 1;
+        }
+        if (monster->y < player->y && monster->y < info.screenheight - 2) {
+            monster->y += 1;
+        } else if (monster->y > player->y && monster->y > 2) {
+            monster->y -= 1;
+        }
+        if (movement_blocked(monster, scr.screenmap, monster)) {
+            monster->x = old_pos.x;
+            monster->y = old_pos.y;
+        }
+        mark_dirty(&scr, old_pos.x, old_pos.y);
+    }
 
-    if (movement_blocked(player, screenmap)) {
+    // Check for collisions
+    if (movement_blocked(player, scr.screenmap, monster)) {
         player->x = old_x;
         player->y = old_y;
     }
 
-    // if (movement_blocked(player, screenmap)) {
-    //     memcpy(player, &tmp, sizeof(struct creature));
-    // }
     return player;
 }
 
 void clear_sidebar(char start, char end) {
     for (int i = start; i < end; i++) {
-        for (int j = 0; j < 10; j++) {
+        for (int j = 1; j < SIDE_PANE_WIDTH-2; j++) {
             const int point = i * (info.screenwidth + 1) + j;
             if (_screen->dirty[point] == false) {
                 continue;
@@ -427,10 +582,12 @@ void free_creatures(struct creature * critters) {
     }
 }
 
+
+
 enum filltype { FILL, NO_FILL, BORDER };
 
-///void screen_rect(struct screen * scr, struct symbol symbol, struct area area, enum filltype fill, struct symbol * inner_symbol) {
-    void screen_rect(struct symbol symbol, struct area area, enum filltype fill, struct symbol * inner_symbol) {
+///void screen_rect(struct screen * scr, struct symbol symbol, struct area area, enum filltype fill, struct symbol * inner_symbol)
+void screen_rect(struct symbol symbol, struct area area, enum filltype fill, struct symbol * inner_symbol) {
 
     struct symbol fill_symbol = symbol;
     // area.x = area.x + 1;
@@ -520,7 +677,36 @@ void draw_screen(struct screen * screen, struct symbol terrain[256], unsigned ch
 }
 
 
+void add_creature(struct creature * critters, struct creature * creature) {
+    struct creature * last = get_last_creature(critters);
+    last->next = creature;
+}
 
+
+
+struct point get_random_position() {
+    struct point p;
+    p.x = SIDE_PANE_WIDTH + 2 + rand() % (info.screenwidth - SIDE_PANE_WIDTH - 4);
+    p.y = 2 + rand() % (info.screenheight - 5);
+    return p;
+}
+
+void add_creature_if_none(struct creature * critters) {
+    if (critters->next != NULL) {
+        return;
+    }
+    struct creature *c = create_creature("monsu", 'm', RED, 0, 0);
+    // randomize position
+    struct point p = get_random_position();
+    // collision check
+    while (
+        creature_in_position(critters, p.x, p.y)) p = get_random_position();
+
+    c->x = p.x;
+    c->y = p.y;
+    add_creature(critters, c);
+
+}
 
 void roguelike() {
     enum { KEY_ESC = 27, KEY_ENTER = '\r', KEY_BACKSPACE = 8,
@@ -528,6 +714,8 @@ void roguelike() {
         KEY_UP = 72, KEY_DOWN = 80, KEY_LEFT = 75, KEY_RIGHT = 77 };
 
     enum { FILL, NO_FILL, BORDER };
+
+
 
     inittextinfo();
     gettextinfo( &info );
@@ -538,19 +726,10 @@ void roguelike() {
         .dirty = malloc(info.screenheight * (info.screenwidth + 1)),
     };
     _screen = &screen;
-
-
-    // struct screen screenbuffer = {
-    //     .width = info.screenwidth, .height = info.screenheight, .screenmap = malloc(info.screenheight * (info.screenwidth + 1))
-    // };
-
-
     clrscr();
 
-    //char screenmap[info.screenheight][info.screenwidth + 1]; //y then x
     memset(screen.screenmap, get_symbol_idx("space"), (info.screenwidth + 1) * info.screenheight);
     memset(screen.dirty, 0, (info.screenwidth + 1) * info.screenheight);
-    //memset(screenbuffer.screenmap, get_symbol_idx("space"), (info.screenwidth + 1) * info.screenheight);
 
     struct creature * critters = create_creature("playa", '@', LIGHTGRAY, 16 + ((info.screenwidth - 16) / 2), info.screenheight / 2);
     if (critters == NULL) {
@@ -559,16 +738,10 @@ void roguelike() {
     }
 
     struct creature * head = critters;
-    head->next = create_creature("monsu", 'M', RED, 16 + 20, 20);
-    if (head->next == NULL) {
-        printf("Error: Failed to create monster\n");
-        free_creatures(critters);
-        return;
-    }
 
     /* store player for convenience */
     struct creature * player = critters;
-    struct statistics s_pl = { .atk = 11, .def = 8, .hp = 5, .max_hp = 5 };
+    struct statistics s_pl = { .atk = 11, .def = 8, .hp = 5, .max_hp = 5, .kills=0 };
     player->stats = s_pl;
 
     //construct terrain
@@ -584,31 +757,25 @@ void roguelike() {
     }
     getch();
     clrscr();
-    // screen_rect(get_terrain_symbol("space"), (struct area){0, 0, info.screenwidth, info.screenheight}, FILL, 0);
 
-    // struct symbol terrain_symbol = get_terrain_symbol("wall");
     struct symbol border = { .name = "border", .character = '*', .color = LIGHTGRAY };
     struct symbol vline = { .name = "line", .character = '|', .color = LIGHTGRAY };
 
     //let's make a lawn - screenmap is 0-idexed?
     for (int y = 1; y < info.screenheight - 2; y++) {
-        for (int x = 15; x < info.screenwidth - 2; x++) {
+        for (int x = SIDE_PANE_WIDTH; x < info.screenwidth - 2; x++) {
             screen.screenmap[y * (info.screenwidth + 1) + x] = (90 < rand() % 100) ? get_symbol_idx("water") : get_symbol_idx("grass");
         }
     }
 
-
     // // a wall....
-    struct area area = { .x = 20, .y = 5, .width = 10, .height = 10 };
+    struct area area = { .x = SIDE_PANE_WIDTH+5, .y = 5, .width = 10, .height = 10 };
     map_rect(screen.screenmap, get_symbol_idx("wall"),
         area, BORDER, get_symbol_idx("floor"));
 
     textcolor(WHITE);
-    //full_refresh(&screenmap[0][0], terrain);
-
     draw_screen(&screen, terrain, get_symbol_idx("space"));
-    //draw_screen(&screenbuffer, terrain, get_symbol_idx("space"));
-    draw_creatures(head);
+    draw_creatures(head, screen);
     // --- UI ---
 
     screen_rect(
@@ -617,7 +784,7 @@ void roguelike() {
         NO_FILL, (struct symbol *) NULL);
     screen_rect(
         vline,
-        (struct area){ .x = 15, .y = 2, .width = 1, .height = info.screenheight - 4 },
+        (struct area){ .x = SIDE_PANE_WIDTH, .y = 2, .width = 1, .height = info.screenheight - 4 },
         FILL, NULL
     );
 
@@ -626,14 +793,12 @@ void roguelike() {
     _setcursortype(0);
     print_creature_stats(player, 0);
     while ((val = getch()) != CTRL_Q) {
-        //clear_sidebar(6, 13);
-        erase_creatures(head, screen.screenmap, terrain);
-        player = handle_input(val, player, (char *)screen.screenmap);
-        // head = update_creature_position(head, player->name, player->x, player->y);
-        draw_creatures(head);
+        if (val == KEY_ESC) break;
+        add_creature_if_none(head);
+        erase_creatures(head, screen, terrain);
+        player = handle_input(val, player, screen, head->next);
+        draw_creatures(head, screen);
         textcolor(WHITE);
-        // putchxy(2, 2, ':');
-        // printf("test\n");
         update_creature_stat_display(player, 0);
         _setcursortype(_NOCURSOR);
         _setcursortype(0);
