@@ -5,8 +5,47 @@
 #include <conio2.h>
 #include <errno.h>
 
-enum { KEY_UP = 72, KEY_DOWN = 80, KEY_LEFT = 75, KEY_RIGHT = 77 };
+// macros
+#define IDX(x, y) ((y) * (info.screenwidth + 1) + (x))
 
+/* ------- command dispatcher  -------- */
+
+enum {
+    KEY_EXT   = 256,                 /* offset for prefixed keys */
+    KEY_UP    = KEY_EXT + 72,
+    KEY_DOWN  = KEY_EXT + 80,
+    KEY_LEFT  = KEY_EXT + 75,
+    KEY_RIGHT = KEY_EXT + 77,
+    KEY_ESC   = 27,
+    CTRL_Q    = 17,
+    CTRL_C    = 3
+};
+
+enum action { ACT_NONE, ACT_UP, ACT_DOWN, ACT_LEFT, ACT_RIGHT, ACT_QUIT, ACT_WAIT };
+
+struct binding { int key; enum action act; };
+
+static struct binding bindings[] = {
+    { KEY_UP,    ACT_UP    }, { 'k',    ACT_UP    },
+    { KEY_DOWN,  ACT_DOWN  }, { 'j',    ACT_DOWN  },
+    { KEY_LEFT,  ACT_LEFT  }, { 'h',    ACT_LEFT  },
+    { KEY_RIGHT, ACT_RIGHT }, { 'l',    ACT_RIGHT },
+    { CTRL_Q,    ACT_QUIT  }, { CTRL_C, ACT_QUIT  },
+    { '.',       ACT_WAIT  },
+};
+
+enum action action_for(int key) {
+    for (size_t i = 0; i < sizeof bindings / sizeof *bindings; i++)
+        if (bindings[i].key == key) return bindings[i].act;
+    return ACT_NONE;
+}
+
+int read_key(void) {
+    int c = getch();
+    if (c == 0 || c == 224)          /* prefix: real code follows */
+        c = KEY_EXT + getch();
+    return c;
+}
 struct text_info info; //filled in main
 
 struct list {
@@ -34,6 +73,14 @@ struct symbol {
     char character;
     int color;
 };
+
+ struct area {
+    int x, y, w, h;
+ };
+
+ struct point {
+    int x, y;
+ };
 
 //gameplay related data
 struct statistics {
@@ -281,6 +328,10 @@ void print_creature_stats(struct creature * cr, char offset_y) {
         NULL
     };
 
+    gotoxy(2, 2 + offset_y);
+    printf("%s", cr->name);
+
+
     cputsxy(3, 2+offset_y, cr->name);
 
     for (int i = 0; stats[i] != NULL; i++) {
@@ -346,6 +397,8 @@ bool movement_blocked(struct creature *player, char * screenmap) {
         return true;
     }
 
+    if (creature_in_position(player, player->x, player->y)) {
+
     struct creature * cr = creature_in_position(player, player->x, player->y);
     if (cr != NULL && strcmp(cr->name, player->name) != 0) {
         print_creature_stats(cr, 6);
@@ -357,6 +410,18 @@ bool movement_blocked(struct creature *player, char * screenmap) {
 
 struct creature * handle_input(int val, struct creature * player, char * screenmap) {
     if (player == NULL || screenmap == NULL) return NULL;
+
+    struct point max_edge = {
+        .x=info.screenwidth - 1,
+        .y=info.screenheight - 2
+    };
+
+    struct creature tmp = *player;
+    switch (action_for(val)) {
+        case ACT_UP: player-> y = (player->y > 2) ? -1 : player->y;
+            break;
+        case ACT_DOWN:
+            player->y = (player->y < max_edge.y) ? player->y + 1 : max_edge.y;
 
     // testing suggestion
     int old_x = player->x;
@@ -370,20 +435,11 @@ struct creature * handle_input(int val, struct creature * player, char * screenm
                 player->y -= 1;
             }
             break;
-        case KEY_DOWN:
-            if (player->y < info.screenheight - 2) {
-                player->y += 1;
-            }
+        case ACT_LEFT: player-> x = (player->x > 2) ? -1 : player->x;
             break;
-        case KEY_LEFT:
-            if (player->x > 17) {
-                player->x -= 1;
-            }
+        case ACT_RIGHT: player-x = (player->x < max_edge.x) ? player->x + 1 : max_edge.x;
             break;
-        case KEY_RIGHT:
-            if (player->x < info.screenwidth - 1) {
-                player->x += 1;
-            }
+        case ACT_WAIT:
             break;
         default:
             break;
@@ -523,6 +579,13 @@ void draw_screen(struct screen * screen, struct symbol terrain[256], unsigned ch
 
 
 void roguelike() {
+    // enum { KEY_ESC = 27, KEY_ENTER = '\r', KEY_BACKSPACE = 8,
+    //     CTRL_S = 19, CTRL_P = 16, CTRL_Q = 17, CTRL_B = 2,
+    //     KEY_UP = 72, KEY_DOWN = 80, KEY_LEFT = 75, KEY_RIGHT = 77 };
+
+    char screenmap[info.screenheight][info.screenwidth + 1]; //y then x
+    memset(screenmap, ' ', (info.screenwidth + 1) * info.screenheight);
+
     enum { KEY_ESC = 27, KEY_ENTER = '\r', KEY_BACKSPACE = 8,
         CTRL_S = 19, CTRL_P = 16, CTRL_Q = 17, CTRL_B = 2,
         KEY_UP = 72, KEY_DOWN = 80, KEY_LEFT = 75, KEY_RIGHT = 77 };
@@ -571,9 +634,16 @@ void roguelike() {
     struct statistics s_pl = { .atk = 11, .def = 8, .hp = 5, .max_hp = 5 };
     player->stats = s_pl;
 
+
     //construct terrain
     init_terrain_defaults();
     init_terrain();
+
+    for (int i = 3; i < 256; i++) {
+        terrain[i].name = "undefined";
+        terrain[i].character = 0;
+        terrain[i].color = 0;
+    }
 
     int val; // getch value
     clrscr();
@@ -582,7 +652,8 @@ void roguelike() {
         gotoxy((info.screenwidth - (strchr(title[i], '\0') - title[i])) / 2, -3 + i + info.screenheight / 2);
         printf("%s", title[i]);
     }
-    getch();
+
+    read_key();
     clrscr();
     // screen_rect(get_terrain_symbol("space"), (struct area){0, 0, info.screenwidth, info.screenheight}, FILL, 0);
 
@@ -591,6 +662,19 @@ void roguelike() {
     struct symbol vline = { .name = "line", .character = '|', .color = LIGHTGRAY };
 
     //let's make a lawn - screenmap is 0-idexed?
+
+    for (int i = 0; i < info.screenheight - 1; i++) {
+        screenmap[i][15] = '|';
+        screenmap[i][0] = '*';
+        screenmap[i][info.screenwidth - 1] = '*';
+        screenmap[i][info.screenwidth] = '\0';
+    }
+    for (int i = 0; i < info.screenwidth; i++) {
+        screenmap[0][i] = '*';
+        screenmap[info.screenheight - 2][i] = '*';
+    }
+
+    //let's make a lawn
     for (int y = 1; y < info.screenheight - 2; y++) {
         for (int x = 15; x < info.screenwidth - 2; x++) {
             screen.screenmap[y * (info.screenwidth + 1) + x] = (90 < rand() % 100) ? get_symbol_idx("water") : get_symbol_idx("grass");
@@ -602,6 +686,17 @@ void roguelike() {
     struct area area = { .x = 20, .y = 5, .width = 10, .height = 10 };
     map_rect(screen.screenmap, get_symbol_idx("wall"),
         area, BORDER, get_symbol_idx("floor"));
+
+
+    // a wall....
+    for (int x = 20; x < 30; x++) {
+        screenmap[5][x] = WALL;
+        screenmap[15][x] = WALL;
+    }
+    for (int y = 5; y < 15; y++) {
+        screenmap[y][20] = WALL;
+        screenmap[y][30] = WALL;
+    }
 
     textcolor(WHITE);
     //full_refresh(&screenmap[0][0], terrain);
@@ -624,8 +719,8 @@ void roguelike() {
     gotoxy(1, 1);
     _setcursortype(_NOCURSOR);
     _setcursortype(0);
-    print_creature_stats(player, 0);
-    while ((val = getch()) != CTRL_Q) {
+print_creature_stats(player, 0);
+    while (action_for(read_key(&val)) != ACT_QUIT) {
         //clear_sidebar(6, 13);
         erase_creatures(head, screen.screenmap, terrain);
         player = handle_input(val, player, (char *)screen.screenmap);
@@ -633,7 +728,7 @@ void roguelike() {
         draw_creatures(head);
         textcolor(WHITE);
         // putchxy(2, 2, ':');
-        // printf("test\n");
+        // // printf("test\n");
         update_creature_stat_display(player, 0);
         _setcursortype(_NOCURSOR);
         _setcursortype(0);
