@@ -5,6 +5,8 @@
 #include <conio2.h>
 #include <errno.h>
 
+struct text_info info; //filled in main
+
 // macros
 #define IDX(x, y) ((y) * (info.screenwidth + 1) + (x))
 
@@ -46,7 +48,7 @@ int read_key(void) {
         c = KEY_EXT + getch();
     return c;
 }
-struct text_info info; //filled in main
+
 
 struct list {
     wchar_t * line;
@@ -73,10 +75,6 @@ struct symbol {
     char character;
     int color;
 };
-
- struct area {
-    int x, y, w, h;
- };
 
  struct point {
     int x, y;
@@ -398,17 +396,19 @@ bool movement_blocked(struct creature *player, char * screenmap) {
     }
 
     if (creature_in_position(player, player->x, player->y)) {
-
-    struct creature * cr = creature_in_position(player, player->x, player->y);
-    if (cr != NULL && strcmp(cr->name, player->name) != 0) {
-        print_creature_stats(cr, 6);
-        return true;
+        struct creature * cr = creature_in_position(player, player->x, player->y);
+        if (cr != NULL && strcmp(cr->name, player->name) != 0) {
+            print_creature_stats(cr, 6);
+            return true;
+        }
+        clear_creature_stats(7); // off by one bug maybe?
+        return false;
     }
-    clear_creature_stats(7); // off by one bug maybe?
+
     return false;
 }
 
-struct creature * handle_input(int val, struct creature * player, char * screenmap) {
+struct creature * handle_input(enum action act, struct creature * player, char * screenmap) {
     if (player == NULL || screenmap == NULL) return NULL;
 
     struct point max_edge = {
@@ -416,30 +416,28 @@ struct creature * handle_input(int val, struct creature * player, char * screenm
         .y=info.screenheight - 2
     };
 
-    struct creature tmp = *player;
-    switch (action_for(val)) {
-        case ACT_UP: player-> y = (player->y > 2) ? -1 : player->y;
-            break;
-        case ACT_DOWN:
-            player->y = (player->y < max_edge.y) ? player->y + 1 : max_edge.y;
-
     // testing suggestion
-    int old_x = player->x;
-    int old_y = player->y;
+    struct point p_pos = { .x=player->x, .y=player->y };
 
 
-    // struct creature tmp = *player;
-    switch (val) {
-        case KEY_UP:
-            if (player->y > 2) {
-                player->y -= 1;
-            }
+    // enum action act = action_for(val);
+
+    switch (act) {
+        case ACT_UP:    player->y += (p_pos.y > 2)          ? -1 : p_pos.y;
             break;
-        case ACT_LEFT: player-> x = (player->x > 2) ? -1 : player->x;
+        case ACT_LEFT:  player->x += (p_pos.x > 2)          ? -1 : p_pos.x;
             break;
-        case ACT_RIGHT: player-x = (player->x < max_edge.x) ? player->x + 1 : max_edge.x;
+        case ACT_RIGHT: player->x += (p_pos.x < max_edge.x) ?  1 : max_edge.x;
+            break;
+        case ACT_DOWN:  player->y += (p_pos.y < max_edge.y) ?  1 : max_edge.y;
             break;
         case ACT_WAIT:
+            break;
+        case ACT_NONE:
+            break;
+        case ACT_QUIT:
+            // Save and quit?
+            exit(0);
             break;
         default:
             break;
@@ -449,13 +447,10 @@ struct creature * handle_input(int val, struct creature * player, char * screenm
     /* handle movement */
 
     if (movement_blocked(player, screenmap)) {
-        player->x = old_x;
-        player->y = old_y;
+        player->x = p_pos.x;
+        player->y = p_pos.y;
     }
 
-    // if (movement_blocked(player, screenmap)) {
-    //     memcpy(player, &tmp, sizeof(struct creature));
-    // }
     return player;
 }
 
@@ -639,14 +634,8 @@ void roguelike() {
     init_terrain_defaults();
     init_terrain();
 
-    for (int i = 3; i < 256; i++) {
-        terrain[i].name = "undefined";
-        terrain[i].character = 0;
-        terrain[i].color = 0;
-    }
-
-    int val; // getch value
     clrscr();
+
     char * title[] = {"Roguelike", "Press Any Key"};
     for (int i = 0; i != 2; i++) {
         gotoxy((info.screenwidth - (strchr(title[i], '\0') - title[i])) / 2, -3 + i + info.screenheight / 2);
@@ -661,69 +650,52 @@ void roguelike() {
     struct symbol border = { .name = "border", .character = '*', .color = LIGHTGRAY };
     struct symbol vline = { .name = "line", .character = '|', .color = LIGHTGRAY };
 
-    //let's make a lawn - screenmap is 0-idexed?
-
-    for (int i = 0; i < info.screenheight - 1; i++) {
-        screenmap[i][15] = '|';
-        screenmap[i][0] = '*';
-        screenmap[i][info.screenwidth - 1] = '*';
-        screenmap[i][info.screenwidth] = '\0';
-    }
-    for (int i = 0; i < info.screenwidth; i++) {
-        screenmap[0][i] = '*';
-        screenmap[info.screenheight - 2][i] = '*';
-    }
-
     //let's make a lawn
     for (int y = 1; y < info.screenheight - 2; y++) {
         for (int x = 15; x < info.screenwidth - 2; x++) {
-            screen.screenmap[y * (info.screenwidth + 1) + x] = (90 < rand() % 100) ? get_symbol_idx("water") : get_symbol_idx("grass");
+            screen.screenmap[y * (info.screenwidth + 1) + x] = (90 < rand() % 100)
+            ? get_symbol_idx("water") : get_symbol_idx("grass");
         }
     }
 
 
     // // a wall....
     struct area area = { .x = 20, .y = 5, .width = 10, .height = 10 };
-    map_rect(screen.screenmap, get_symbol_idx("wall"),
-        area, BORDER, get_symbol_idx("floor"));
+    map_rect(
+        screen.screenmap, get_symbol_idx("wall"),
+        area, BORDER, get_symbol_idx("floor")
+    );
 
-
-    // a wall....
-    for (int x = 20; x < 30; x++) {
-        screenmap[5][x] = WALL;
-        screenmap[15][x] = WALL;
-    }
-    for (int y = 5; y < 15; y++) {
-        screenmap[y][20] = WALL;
-        screenmap[y][30] = WALL;
-    }
 
     textcolor(WHITE);
-    //full_refresh(&screenmap[0][0], terrain);
 
     draw_screen(&screen, terrain, get_symbol_idx("space"));
-    //draw_screen(&screenbuffer, terrain, get_symbol_idx("space"));
-    draw_creatures(head);
+    // draw_creatures(head);
     // --- UI ---
+
+    int max_width = info.screenwidth-2;
+    int max_height = info.screenheight-2;
 
     screen_rect(
         border,
-        (struct area){ .x = 1, .y = 1, .width = info.screenwidth-2, .height = info.screenheight - 2 },
-        NO_FILL, (struct symbol *) NULL);
+        (struct area){ .x = 1, .y = 1, .width = max_width, .height = max_height },
+        NO_FILL, (struct symbol *) NULL
+    );
     screen_rect(
         vline,
-        (struct area){ .x = 15, .y = 2, .width = 1, .height = info.screenheight - 4 },
+        (struct area){ .x = 15, .y = 2, .width = 1, .height = max_height - 2 },
         FILL, NULL
     );
 
     gotoxy(1, 1);
     _setcursortype(_NOCURSOR);
     _setcursortype(0);
-print_creature_stats(player, 0);
-    while (action_for(read_key(&val)) != ACT_QUIT) {
+    print_creature_stats(player, 0);
+    enum action act = action_for(read_key());
+    while (act != ACT_QUIT) {
         //clear_sidebar(6, 13);
         erase_creatures(head, screen.screenmap, terrain);
-        player = handle_input(val, player, (char *)screen.screenmap);
+        player = handle_input(act, player, (char *)screen.screenmap);
         // head = update_creature_position(head, player->name, player->x, player->y);
         draw_creatures(head);
         textcolor(WHITE);
@@ -732,6 +704,7 @@ print_creature_stats(player, 0);
         update_creature_stat_display(player, 0);
         _setcursortype(_NOCURSOR);
         _setcursortype(0);
+        act =  action_for(read_key());
     }
 
     // Free all allocated memory
